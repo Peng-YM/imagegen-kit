@@ -20,6 +20,18 @@ Model metadata is stored in [`models.json`](./models.json) and embedded into the
 - Dry-run output for validating command shape before real API calls
 - JSON output for agent and script usage
 
+## Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Peng-YM/imagegen-kit/master/install.sh | bash
+```
+
+To install a specific release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Peng-YM/imagegen-kit/master/install.sh | bash -s -- v0.1.0
+```
+
 ## Usage
 
 ```bash
