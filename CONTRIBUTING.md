@@ -1,5 +1,11 @@
 # Contributing
 
+## Build From Source
+
+```bash
+cargo install --path .
+```
+
 ## Development Checks
 
 ```bash

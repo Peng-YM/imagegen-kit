@@ -20,12 +20,6 @@ Both providers use `ZENMUX_API_KEY`.
 - JSON output for agent and script usage
 - Release/build skeleton copied in spirit from `pdf-to-markdown`
 
-## Install From Source
-
-```bash
-cargo install --path .
-```
-
 ## Usage
 
 ```bash
@@ -128,11 +122,6 @@ Firecrawl snapshots of the ZenMux docs used for this implementation are saved in
 - `.firecrawl/zenmux-image-generation.md`
 - `.firecrawl/zenmux-openai-image-generation.md`
 
-## Development
+## Contributing
 
-```bash
-make fmt
-make check
-make clippy
-make test
-```
+For source builds, development checks, and project layout notes, see [CONTRIBUTING.md](./CONTRIBUTING.md).
