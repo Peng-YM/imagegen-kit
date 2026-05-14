@@ -47,6 +47,9 @@ imagegen-kit generate "a clean product photo of a ceramic mug" \
   --model gpt-image-2 \
   --quality high
 
+# Generate and show the saved image inline in iTerm2 or Kitty
+imagegen-kit generate "a clean product photo of a ceramic mug" --show
+
 # Generate via Google Gemini protocol
 imagegen-kit generate "a nano banana dish in a fancy restaurant" \
   --provider zenmux/google \
@@ -75,7 +78,8 @@ imagegen-kit generate "prompt text" \
   --quality high \
   --output-format png \
   --count 1 \
-  --output-dir ./output
+  --output-dir ./output \
+  --show
 ```
 
 ### `edit`
@@ -88,8 +92,11 @@ imagegen-kit edit ./input.png "edit prompt" \
   --provider zenmux/openai \
   --model gpt-image-2 \
   --size 1024x1024 \
-  --output-dir ./output
+  --output-dir ./output \
+  --show
 ```
+
+`--show` displays saved images inline in iTerm2 or Kitty only. It is not available with `--json` or `--quiet`.
 
 ### `provider`
 

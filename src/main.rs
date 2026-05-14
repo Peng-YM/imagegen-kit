@@ -1,3 +1,5 @@
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine;
 use clap::{Parser, Subcommand};
 use colored::Colorize;
 use imagegen_kit::auth;
@@ -9,8 +11,9 @@ use imagegen_kit::utils::{default_output_dir, ensure_dir_exists, parse_size, wri
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::Serialize;
 use serde_json::json;
+use std::fs;
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,6 +103,9 @@ EXAMPLES:
     # Generate through ZenMux OpenAI Images protocol
     imagegen-kit generate \"a clean product photo of a ceramic mug\" --provider zenmux/openai --model gpt-image-2
 
+    # Generate and show the saved image inline in iTerm2 or Kitty
+    imagegen-kit generate \"a clean product photo of a ceramic mug\" --show
+
     # Generate through ZenMux Google Gemini / Vertex AI protocol
     imagegen-kit generate \"a nano banana dish in a fancy restaurant\" --provider zenmux/google --model google/gemini-3-pro-image-preview
 
@@ -186,6 +192,9 @@ enum Commands {
         dry_run: bool,
 
         #[arg(long)]
+        show: bool,
+
+        #[arg(long)]
         overwrite: bool,
     },
 
@@ -234,6 +243,9 @@ enum Commands {
 
         #[arg(long)]
         dry_run: bool,
+
+        #[arg(long)]
+        show: bool,
 
         #[arg(long)]
         overwrite: bool,
@@ -317,6 +329,7 @@ async fn run(cli: Cli) -> Result<()> {
             json,
             quiet,
             dry_run,
+            show,
             overwrite,
         } => {
             run_generate(
@@ -335,6 +348,7 @@ async fn run(cli: Cli) -> Result<()> {
                 json,
                 quiet,
                 dry_run,
+                show,
                 overwrite,
             )
             .await
@@ -355,6 +369,7 @@ async fn run(cli: Cli) -> Result<()> {
             json,
             quiet,
             dry_run,
+            show,
             overwrite,
         } => {
             run_edit(
@@ -373,6 +388,7 @@ async fn run(cli: Cli) -> Result<()> {
                 json,
                 quiet,
                 dry_run,
+                show,
                 overwrite,
             )
             .await
@@ -401,11 +417,13 @@ async fn run_generate(
     json: bool,
     quiet: bool,
     dry_run: bool,
+    show: bool,
     overwrite: bool,
 ) -> Result<()> {
     if count == 0 {
         return Err(anyhow!("COUNT must be greater than zero"));
     }
+    validate_show_option(show, json, quiet)?;
     parse_size(&size)?;
 
     let output_dir = output_dir.unwrap_or(default_output_dir()?);
@@ -471,7 +489,9 @@ async fn run_generate(
         )
         .await?;
 
-    print_command_result(result.provider, result.model, result.artifacts, json, quiet)
+    print_command_result(&result, json, quiet)?;
+    maybe_show_artifacts(&result.artifacts, show);
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -491,8 +511,10 @@ async fn run_edit(
     json: bool,
     quiet: bool,
     dry_run: bool,
+    show: bool,
     overwrite: bool,
 ) -> Result<()> {
+    validate_show_option(show, json, quiet)?;
     parse_size(&size)?;
     if !input.exists() {
         return Err(anyhow!("Input image not found: {}", input.display()));
@@ -562,7 +584,9 @@ async fn run_edit(
         )
         .await?;
 
-    print_command_result(result.provider, result.model, result.artifacts, json, quiet)
+    print_command_result(&result, json, quiet)?;
+    maybe_show_artifacts(&result.artifacts, show);
+    Ok(())
 }
 
 fn run_provider(
@@ -927,21 +951,18 @@ fn print_dry_run(result: DryRunResultJson, json: bool, quiet: bool) -> Result<()
     Ok(())
 }
 
-fn print_command_result(
-    provider: String,
-    model: Option<String>,
-    artifacts: Vec<imagegen_kit::ImageArtifact>,
-    json: bool,
-    quiet: bool,
-) -> Result<()> {
-    let artifact_paths =
-        artifacts.iter().map(|artifact| artifact.path.display().to_string()).collect::<Vec<_>>();
+fn print_command_result(result: &imagegen_kit::ImageResult, json: bool, quiet: bool) -> Result<()> {
+    let artifact_paths = result
+        .artifacts
+        .iter()
+        .map(|artifact| artifact.path.display().to_string())
+        .collect::<Vec<_>>();
 
     if json {
         return write_json_pretty(&CommandResultJson {
             success: true,
-            provider,
-            model,
+            provider: result.provider.clone(),
+            model: result.model.clone(),
             artifacts: artifact_paths,
         });
     }
@@ -954,15 +975,119 @@ fn print_command_result(
     }
 
     println!("{}", "Completed".green().bold());
-    for artifact in artifacts {
+    for artifact in &result.artifacts {
         println!("{}", artifact.path.display());
     }
     Ok(())
 }
 
+fn validate_show_option(show: bool, json: bool, quiet: bool) -> Result<()> {
+    if show && json {
+        return Err(anyhow!("--show cannot be used with --json"));
+    }
+    if show && quiet {
+        return Err(anyhow!("--show cannot be used with --quiet"));
+    }
+    Ok(())
+}
+
+fn maybe_show_artifacts(artifacts: &[imagegen_kit::ImageArtifact], show: bool) {
+    if !show {
+        return;
+    }
+
+    if let Err(error) = show_artifacts(artifacts) {
+        eprintln!("{} {}", "Warning:".yellow().bold(), error);
+    }
+}
+
+fn show_artifacts(artifacts: &[imagegen_kit::ImageArtifact]) -> Result<()> {
+    let protocol = detect_inline_image_protocol()
+        .ok_or_else(|| anyhow!("--show only supports iTerm2 or Kitty terminals"))?;
+
+    for artifact in artifacts {
+        show_artifact(&artifact.path, protocol)?;
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InlineImageProtocol {
+    Iterm2,
+    Kitty,
+}
+
+fn detect_inline_image_protocol() -> Option<InlineImageProtocol> {
+    inline_image_protocol_from_env(
+        std::env::var("TERM_PROGRAM").ok().as_deref(),
+        std::env::var("TERM").ok().as_deref(),
+        std::env::var("KITTY_WINDOW_ID").ok().as_deref(),
+    )
+}
+
+fn inline_image_protocol_from_env(
+    term_program: Option<&str>,
+    term: Option<&str>,
+    kitty_window_id: Option<&str>,
+) -> Option<InlineImageProtocol> {
+    if kitty_window_id.is_some() || term.map(|value| value.contains("xterm-kitty")).unwrap_or(false)
+    {
+        return Some(InlineImageProtocol::Kitty);
+    }
+
+    if term_program.map(|value| value.to_ascii_lowercase().contains("iterm")).unwrap_or(false) {
+        return Some(InlineImageProtocol::Iterm2);
+    }
+
+    None
+}
+
+fn show_artifact(path: &Path, protocol: InlineImageProtocol) -> Result<()> {
+    match protocol {
+        InlineImageProtocol::Iterm2 => show_iterm2_image(path),
+        InlineImageProtocol::Kitty => show_kitty_image(path),
+    }
+}
+
+fn show_iterm2_image(path: &Path) -> Result<()> {
+    let bytes = fs::read(path)?;
+    let file_name = path.file_name().and_then(|name| name.to_str()).unwrap_or("image");
+    let encoded_name = BASE64.encode(file_name.as_bytes());
+    let encoded_data = BASE64.encode(bytes);
+
+    println!(
+        "\x1b]1337;File=name={};inline=1;width=80%;preserveAspectRatio=1:{}\x07",
+        encoded_name, encoded_data
+    );
+    io::stdout().flush()?;
+    Ok(())
+}
+
+fn show_kitty_image(path: &Path) -> Result<()> {
+    let path = path.canonicalize()?;
+    let encoded_path = BASE64.encode(path.to_string_lossy().as_bytes());
+    let columns = terminal_preview_columns();
+
+    println!("\x1b_Ga=T,t=f,c={};{}\x1b\\", columns, encoded_path);
+    io::stdout().flush()?;
+    Ok(())
+}
+
+fn terminal_preview_columns() -> u16 {
+    std::env::var("COLUMNS")
+        .ok()
+        .and_then(|value| value.parse::<u16>().ok())
+        .map(|columns| columns.saturating_sub(4).clamp(20, 100))
+        .unwrap_or(80)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{resolve_provider_model, ModelOperation, ProviderType};
+    use super::{
+        inline_image_protocol_from_env, resolve_provider_model, validate_show_option,
+        InlineImageProtocol, ModelOperation, ProviderType,
+    };
 
     #[test]
     fn rejects_openai_models_on_google_provider() {
@@ -1011,5 +1136,29 @@ mod tests {
         let result =
             resolve_provider_model(&ProviderType::ZenmuxGoogle, None, ModelOperation::Edit);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn detects_iterm2_inline_image_protocol() {
+        let protocol =
+            inline_image_protocol_from_env(Some("iTerm.app"), Some("xterm-256color"), None);
+        assert_eq!(protocol, Some(InlineImageProtocol::Iterm2));
+    }
+
+    #[test]
+    fn detects_kitty_inline_image_protocol() {
+        let protocol =
+            inline_image_protocol_from_env(Some("Apple_Terminal"), Some("xterm-kitty"), None);
+        assert_eq!(protocol, Some(InlineImageProtocol::Kitty));
+
+        let protocol = inline_image_protocol_from_env(None, None, Some("1"));
+        assert_eq!(protocol, Some(InlineImageProtocol::Kitty));
+    }
+
+    #[test]
+    fn rejects_show_with_machine_output_modes() {
+        assert!(validate_show_option(true, true, false).is_err());
+        assert!(validate_show_option(true, false, true).is_err());
+        assert!(validate_show_option(true, false, false).is_ok());
     }
 }

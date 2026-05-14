@@ -30,9 +30,10 @@ Model metadata comes from the embedded `models.json` catalog.
 
 ```bash
 imagegen-kit generate "prompt text" --provider zenmux/openai --model gpt-image-2
+imagegen-kit generate "prompt text" --provider zenmux/openai --model gpt-image-2 --show
 imagegen-kit generate "prompt text" --provider zenmux/google --model google/gemini-3-pro-image-preview
 imagegen-kit generate "prompt text" --provider zenmux/google --model qwen/qwen-image-2.0
-imagegen-kit edit ./input.png "edit prompt" --provider zenmux/openai --model gpt-image-2
+imagegen-kit edit ./input.png "edit prompt" --provider zenmux/openai --model gpt-image-2 --show
 imagegen-kit generate "prompt text" --dry-run --json
 imagegen-kit provider --list --provider zenmux/google
 imagegen-kit status

@@ -11,6 +11,7 @@ OpenAI image models are intentionally not routed through the Google protocol. Us
 Model metadata lives in `models.json` and is embedded into the binary via `include_str!("../models.json")`; released binaries do not need a separate runtime copy.
 Provider metadata and credential login/logout are handled by `imagegen-kit provider`; use `provider --list` for model descriptions and `provider --login` / `provider --logout` for credential storage.
 Logged-in providers and generate/edit defaults are reported by `imagegen-kit status`.
+Generation and editing support `--show` for inline image display in iTerm2 or Kitty.
 
 Firecrawl source docs:
 
