@@ -2,6 +2,7 @@ use super::{
     EditRequest, GenerateRequest, ImageArtifact, ImageProvider, ImageResult, ProgressUpdate,
 };
 use crate::error::{anyhow, Result};
+use crate::models::{resolve_model, GoogleMethod, ModelEntry, ModelOperation};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use reqwest::multipart::{Form, Part};
@@ -13,8 +14,6 @@ use std::time::Duration;
 
 const ZENMUX_OPENAI_BASE_URL: &str = "https://zenmux.ai/api/v1";
 const ZENMUX_VERTEX_BASE_URL: &str = "https://zenmux.ai/api/vertex-ai/v1";
-const DEFAULT_OPENAI_MODEL: &str = "gpt-image-2";
-const DEFAULT_GOOGLE_MODEL: &str = "google/gemini-3-pro-image-preview";
 
 pub struct ZenmuxOpenAiProvider {
     api_key: Option<String>,
@@ -46,9 +45,11 @@ impl ImageProvider for ZenmuxOpenAiProvider {
     ) -> Result<ImageResult> {
         progress_cb(ProgressUpdate::new("Calling ZenMux OpenAI Images API".to_string()));
 
-        let model = request.model.clone().unwrap_or_else(|| DEFAULT_OPENAI_MODEL.to_string());
+        let model_entry =
+            resolve_model("zenmux/openai", request.model.as_deref(), ModelOperation::Generate)?;
+        let api_model = model_entry.api_model.clone();
         let mut body = json!({
-            "model": model,
+            "model": api_model,
             "prompt": request.prompt,
             "n": request.count,
             "size": request.size,
@@ -79,7 +80,11 @@ impl ImageProvider for ZenmuxOpenAiProvider {
         )
         .await?;
 
-        Ok(ImageResult { provider: "zenmux/openai".to_string(), model: Some(model), artifacts })
+        Ok(ImageResult {
+            provider: "zenmux/openai".to_string(),
+            model: Some(model_entry.id),
+            artifacts,
+        })
     }
 
     async fn edit(
@@ -89,9 +94,11 @@ impl ImageProvider for ZenmuxOpenAiProvider {
     ) -> Result<ImageResult> {
         progress_cb(ProgressUpdate::new("Calling ZenMux OpenAI Images edit API".to_string()));
 
-        let model = request.model.clone().unwrap_or_else(|| DEFAULT_OPENAI_MODEL.to_string());
+        let model_entry =
+            resolve_model("zenmux/openai", request.model.as_deref(), ModelOperation::Edit)?;
+        let api_model = model_entry.api_model.clone();
         let mut form = Form::new()
-            .text("model", model.clone())
+            .text("model", api_model)
             .text("prompt", request.prompt)
             .text("size", request.size);
 
@@ -131,7 +138,11 @@ impl ImageProvider for ZenmuxOpenAiProvider {
         )
         .await?;
 
-        Ok(ImageResult { provider: "zenmux/openai".to_string(), model: Some(model), artifacts })
+        Ok(ImageResult {
+            provider: "zenmux/openai".to_string(),
+            model: Some(model_entry.id),
+            artifacts,
+        })
     }
 }
 
@@ -155,7 +166,7 @@ impl ZenmuxGoogleProvider {
 #[async_trait::async_trait]
 impl ImageProvider for ZenmuxGoogleProvider {
     fn name(&self) -> &'static str {
-        "ZenMux Google Gemini"
+        "ZenMux Google Gemini / Imagen"
     }
 
     async fn generate(
@@ -163,15 +174,22 @@ impl ImageProvider for ZenmuxGoogleProvider {
         request: GenerateRequest,
         mut progress_cb: Box<dyn FnMut(ProgressUpdate) + Send>,
     ) -> Result<ImageResult> {
-        let model = request.model.clone().unwrap_or_else(|| DEFAULT_GOOGLE_MODEL.to_string());
-        if !is_google_model(&model) {
-            return Err(anyhow!(
-                "zenmux/google only supports Google/Gemini image models. Use --provider zenmux/openai for OpenAI image models such as gpt-image-2."
-            ));
+        let model_entry =
+            resolve_model("zenmux/google", request.model.as_deref(), ModelOperation::Generate)?;
+        match model_entry.google_method.unwrap_or(GoogleMethod::GenerateContent) {
+            GoogleMethod::GenerateContent => {
+                progress_cb(ProgressUpdate::new(
+                    "Calling ZenMux Google generateContent API".to_string(),
+                ));
+                self.generate_content(request, model_entry).await
+            }
+            GoogleMethod::Predict => {
+                progress_cb(ProgressUpdate::new(
+                    "Calling ZenMux Google Imagen predict API".to_string(),
+                ));
+                self.generate_images(request, model_entry).await
+            }
         }
-
-        progress_cb(ProgressUpdate::new("Calling ZenMux Google generateContent API".to_string()));
-        self.generate_content(request, model).await
     }
 
     async fn edit(
@@ -189,8 +207,9 @@ impl ZenmuxGoogleProvider {
     async fn generate_content(
         &self,
         request: GenerateRequest,
-        model: String,
+        model_entry: ModelEntry,
     ) -> Result<ImageResult> {
+        let api_model = model_entry.api_model.clone();
         let body = json!({
             "contents": [
                 {
@@ -205,7 +224,7 @@ impl ZenmuxGoogleProvider {
 
         let response = self
             .client
-            .post(vertex_url(&model, "generateContent"))
+            .post(vertex_url(&api_model, "generateContent"))
             .header("x-goog-api-key", self.api_key()?)
             .json(&body)
             .send()
@@ -221,7 +240,43 @@ impl ZenmuxGoogleProvider {
             request.overwrite,
         )?;
 
-        Ok(ImageResult { provider: "zenmux/google".to_string(), model: Some(model), artifacts })
+        Ok(ImageResult {
+            provider: "zenmux/google".to_string(),
+            model: Some(model_entry.id),
+            artifacts,
+        })
+    }
+
+    async fn generate_images(
+        &self,
+        request: GenerateRequest,
+        model_entry: ModelEntry,
+    ) -> Result<ImageResult> {
+        let api_model = model_entry.api_model.clone();
+        let body = vertex_generate_images_body(&request);
+        let response = self
+            .client
+            .post(vertex_url(&api_model, "predict"))
+            .header("x-goog-api-key", self.api_key()?)
+            .json(&body)
+            .send()
+            .await?;
+
+        let value = parse_json_response(response).await?;
+        let images = extract_vertex_prediction_images(&value)?;
+        let artifacts = save_base64_images(
+            &images,
+            &request.output_dir,
+            "image",
+            request.output_format.as_deref(),
+            request.overwrite,
+        )?;
+
+        Ok(ImageResult {
+            provider: "zenmux/google".to_string(),
+            model: Some(model_entry.id),
+            artifacts,
+        })
     }
 }
 
@@ -259,11 +314,43 @@ fn vertex_model_path(model: &str) -> String {
     }
 }
 
-fn is_google_model(model: &str) -> bool {
-    model.starts_with("google/")
-        || model.starts_with("gemini")
-        || model.contains("/gemini")
-        || model.starts_with("publishers/google/")
+fn vertex_generate_images_body(request: &GenerateRequest) -> Value {
+    let mut body = json!({
+        "instances": [{ "prompt": request.prompt }],
+        "parameters": {
+            "sampleCount": request.count
+        },
+        "imageSize": request.size,
+    });
+
+    if let Some(negative_prompt) = &request.negative_prompt {
+        body["parameters"]["negativePrompt"] = json!(negative_prompt);
+    }
+    insert_optional(&mut body, "quality", request.quality.as_deref());
+    insert_vertex_output_options(
+        &mut body,
+        request.output_format.as_deref(),
+        request.output_compression,
+    );
+    body
+}
+
+fn insert_vertex_output_options(
+    body: &mut Value,
+    output_format: Option<&str>,
+    output_compression: Option<u8>,
+) {
+    if output_format.is_none() && output_compression.is_none() {
+        return;
+    }
+
+    let output_options = &mut body["parameters"]["outputOptions"];
+    if let Some(output_format) = output_format {
+        output_options["mimeType"] = json!(format_to_mime(output_format));
+    }
+    if let Some(output_compression) = output_compression {
+        output_options["compressionQuality"] = json!(output_compression);
+    }
 }
 
 fn insert_optional(body: &mut Value, key: &str, value: Option<&str>) {
@@ -351,6 +438,52 @@ struct B64Image {
     b64: String,
     mime_type: String,
     revised_prompt: Option<String>,
+}
+
+fn extract_vertex_prediction_images(value: &Value) -> Result<Vec<B64Image>> {
+    let predictions = value
+        .get("predictions")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow!("ZenMux Vertex response did not include predictions"))?;
+
+    let mut images = Vec::new();
+    for prediction in predictions {
+        if let Some(b64) = prediction.get("bytesBase64Encoded").and_then(Value::as_str) {
+            images.push(B64Image {
+                b64: b64.to_string(),
+                mime_type: prediction
+                    .get("mimeType")
+                    .and_then(Value::as_str)
+                    .unwrap_or("image/png")
+                    .to_string(),
+                revised_prompt: prediction
+                    .get("prompt")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+            });
+        } else if let Some(image) = prediction.get("image") {
+            if let Some(b64) = image.get("bytesBase64Encoded").and_then(Value::as_str) {
+                images.push(B64Image {
+                    b64: b64.to_string(),
+                    mime_type: image
+                        .get("mimeType")
+                        .and_then(Value::as_str)
+                        .unwrap_or("image/png")
+                        .to_string(),
+                    revised_prompt: prediction
+                        .get("prompt")
+                        .and_then(Value::as_str)
+                        .map(str::to_string),
+                });
+            }
+        }
+    }
+
+    if images.is_empty() {
+        return Err(anyhow!("ZenMux Vertex response contained no image bytes"));
+    }
+
+    Ok(images)
 }
 
 fn extract_generate_content_images(value: &Value) -> Result<Vec<B64Image>> {

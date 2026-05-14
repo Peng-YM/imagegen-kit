@@ -20,16 +20,18 @@ imagegen-kit --version && imagegen-kit providers && imagegen-kit --help
 ## Providers
 
 - `zenmux/openai`: OpenAI Images protocol, default model `gpt-image-2`
-- `zenmux/google`: Google Gemini / Vertex AI protocol, default generate model `google/gemini-3-pro-image-preview`
+- `zenmux/google`: Google Gemini / Imagen / Vertex AI protocol, default generate model `google/gemini-3-pro-image-preview`
 
 Both providers use `ZENMUX_API_KEY`.
 OpenAI image models must use `zenmux/openai`; do not call them through `zenmux/google`.
+Model metadata comes from the embedded `models.json` catalog.
 
 ## Usage
 
 ```bash
 imagegen-kit generate "prompt text" --provider zenmux/openai --model gpt-image-2
 imagegen-kit generate "prompt text" --provider zenmux/google --model google/gemini-3-pro-image-preview
+imagegen-kit generate "prompt text" --provider zenmux/google --model qwen/qwen-image-2.0
 imagegen-kit edit ./input.png "edit prompt" --provider zenmux/openai --model gpt-image-2
 imagegen-kit generate "prompt text" --dry-run --json
 ```

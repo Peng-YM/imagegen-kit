@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 use colored::Colorize;
 use imagegen_kit::auth;
 use imagegen_kit::error::{anyhow, Result};
+use imagegen_kit::models::{self, ModelEntry, ModelOperation};
 use imagegen_kit::provider::ProviderType;
 use imagegen_kit::provider::{create_provider, supported_providers, EditRequest, GenerateRequest};
 use imagegen_kit::utils::{default_output_dir, ensure_dir_exists, parse_size, write_json_pretty};
@@ -70,6 +71,9 @@ EXAMPLES:
 
     # Generate through ZenMux Google Gemini / Vertex AI protocol
     imagegen-kit generate \"a nano banana dish in a fancy restaurant\" --provider zenmux/google --model google/gemini-3-pro-image-preview
+
+    # Generate through ZenMux Google Imagen protocol
+    imagegen-kit generate \"a clean product render\" --provider zenmux/google --model qwen/qwen-image-2.0
 
     # Preview a request without calling ZenMux
     imagegen-kit generate \"a clean product photo of a ceramic mug\" --dry-run --json
@@ -366,7 +370,8 @@ async fn run_generate(
 
     let output_dir = output_dir.unwrap_or(default_output_dir()?);
     let provider_type = parse_provider(provider.as_deref())?;
-    validate_provider_model(&provider_type, model.as_deref(), false)?;
+    let model_entry =
+        resolve_provider_model(&provider_type, model.as_deref(), ModelOperation::Generate)?;
     let (api_key, api_key_source) = resolve_api_key(&provider_type, api_key)?;
     let extension = output_extension(output_format.as_deref());
 
@@ -382,7 +387,7 @@ async fn run_generate(
                 dry_run,
                 command: "generate".to_string(),
                 provider: provider_type.as_str().to_string(),
-                model,
+                model: Some(model_entry.id.clone()),
                 prompt,
                 input: None,
                 output_dir: output_dir.display().to_string(),
@@ -406,7 +411,7 @@ async fn run_generate(
     let request = GenerateRequest {
         prompt,
         negative_prompt,
-        model,
+        model: Some(model_entry.api_model),
         size,
         count,
         quality,
@@ -460,7 +465,8 @@ async fn run_edit(
 
     let output_dir = output_dir.unwrap_or(default_output_dir()?);
     let provider_type = parse_provider(provider.as_deref())?;
-    validate_provider_model(&provider_type, model.as_deref(), true)?;
+    let model_entry =
+        resolve_provider_model(&provider_type, model.as_deref(), ModelOperation::Edit)?;
     let (api_key, api_key_source) = resolve_api_key(&provider_type, api_key)?;
     let extension = output_extension(output_format.as_deref());
     let would_create =
@@ -472,7 +478,7 @@ async fn run_edit(
                 dry_run,
                 command: "edit".to_string(),
                 provider: provider_type.as_str().to_string(),
-                model,
+                model: Some(model_entry.id.clone()),
                 prompt,
                 input: Some(input.display().to_string()),
                 output_dir: output_dir.display().to_string(),
@@ -497,7 +503,7 @@ async fn run_edit(
         input,
         mask,
         prompt,
-        model,
+        model: Some(model_entry.api_model),
         size,
         quality,
         output_format,
@@ -584,11 +590,19 @@ fn run_providers(json: bool) -> Result<()> {
     let providers = supported_providers()
         .into_iter()
         .map(|provider| {
+            let models = models::models_for_provider(provider.as_str())
+                .into_iter()
+                .map(|model| model.id.clone())
+                .collect::<Vec<_>>();
+            let default_model =
+                models::default_model(provider.as_str()).ok().map(|model| model.id.clone());
             json!({
                 "id": provider.as_str(),
                 "name": provider.display_name(),
                 "protocol": provider.protocol(),
                 "env_var": provider.env_var(),
+                "default_model": default_model,
+                "models": models,
                 "status": "implemented",
             })
         })
@@ -619,37 +633,12 @@ fn parse_provider(provider: Option<&str>) -> Result<ProviderType> {
         .ok_or_else(|| anyhow!("Failed to resolve provider"))
 }
 
-fn validate_provider_model(
+fn resolve_provider_model(
     provider_type: &ProviderType,
     model: Option<&str>,
-    is_edit: bool,
-) -> Result<()> {
-    if provider_type != &ProviderType::ZenmuxGoogle {
-        return Ok(());
-    }
-
-    if is_edit {
-        return Err(anyhow!(
-            "zenmux/google does not support image editing in imagegen-kit. Use --provider zenmux/openai for OpenAI image editing."
-        ));
-    }
-
-    if let Some(model) = model {
-        if !is_google_image_model(model) {
-            return Err(anyhow!(
-                "zenmux/google only supports Google/Gemini image models. Use --provider zenmux/openai for OpenAI image models such as gpt-image-2."
-            ));
-        }
-    }
-
-    Ok(())
-}
-
-fn is_google_image_model(model: &str) -> bool {
-    model.starts_with("google/")
-        || model.starts_with("gemini")
-        || model.contains("/gemini")
-        || model.starts_with("publishers/google/")
+    operation: ModelOperation,
+) -> Result<ModelEntry> {
+    models::resolve_model(provider_type.as_str(), model, operation)
 }
 
 fn resolve_api_key(
@@ -769,28 +758,54 @@ fn print_command_result(
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_provider_model, ProviderType};
+    use super::{resolve_provider_model, ModelOperation, ProviderType};
 
     #[test]
     fn rejects_openai_models_on_google_provider() {
-        let result =
-            validate_provider_model(&ProviderType::ZenmuxGoogle, Some("openai/gpt-image-2"), false);
+        let result = resolve_provider_model(
+            &ProviderType::ZenmuxGoogle,
+            Some("openai/gpt-image-2"),
+            ModelOperation::Generate,
+        );
         assert!(result.is_err());
     }
 
     #[test]
     fn accepts_google_models_on_google_provider() {
-        let result = validate_provider_model(
+        let result = resolve_provider_model(
             &ProviderType::ZenmuxGoogle,
             Some("google/gemini-3-pro-image-preview"),
-            false,
+            ModelOperation::Generate,
         );
         assert!(result.is_ok());
     }
 
     #[test]
+    fn accepts_imagen_models_on_google_provider() {
+        let result = resolve_provider_model(
+            &ProviderType::ZenmuxGoogle,
+            Some("qwen/qwen-image-2.0"),
+            ModelOperation::Generate,
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn accepts_openai_alias_on_openai_provider() {
+        let result = resolve_provider_model(
+            &ProviderType::ZenmuxOpenAi,
+            Some("gpt-image-2"),
+            ModelOperation::Generate,
+        )
+        .unwrap();
+        assert_eq!(result.id, "openai/gpt-image-2");
+        assert_eq!(result.api_model, "gpt-image-2");
+    }
+
+    #[test]
     fn rejects_google_provider_for_edits() {
-        let result = validate_provider_model(&ProviderType::ZenmuxGoogle, None, true);
+        let result =
+            resolve_provider_model(&ProviderType::ZenmuxGoogle, None, ModelOperation::Edit);
         assert!(result.is_err());
     }
 }

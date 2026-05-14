@@ -28,14 +28,14 @@ impl ProviderType {
     pub fn display_name(&self) -> &'static str {
         match self {
             ProviderType::ZenmuxOpenAi => "ZenMux OpenAI Images",
-            ProviderType::ZenmuxGoogle => "ZenMux Google Gemini",
+            ProviderType::ZenmuxGoogle => "ZenMux Google Gemini / Imagen",
         }
     }
 
     pub fn protocol(&self) -> &'static str {
         match self {
             ProviderType::ZenmuxOpenAi => "OpenAI Images",
-            ProviderType::ZenmuxGoogle => "Google Gemini / Vertex AI",
+            ProviderType::ZenmuxGoogle => "Google Gemini / Imagen / Vertex AI",
         }
     }
 }

@@ -1,0 +1,134 @@
+{
+  "version": 1,
+  "updated_at": "2026-05-14",
+  "source_urls": [
+    "https://zenmux.ai/models?sort=newest&supported_protocol=imagen",
+    "https://zenmux.ai/models?sort=newest&supported_protocol=imagen%2Cimages"
+  ],
+  "defaults": {
+    "zenmux/openai": "openai/gpt-image-2",
+    "zenmux/google": "google/gemini-3-pro-image-preview"
+  },
+  "models": [
+    {
+      "id": "openai/gpt-image-2",
+      "name": "OpenAI: GPT-Image-2",
+      "provider": "zenmux/openai",
+      "api_model": "gpt-image-2",
+      "aliases": ["gpt-image-2"],
+      "protocols": ["openai-images"],
+      "source_protocols": ["openai-images", "google-imagen"],
+      "supports_generate": true,
+      "supports_edit": true,
+      "note": "ZenMux also lists Google Imagen compatibility for this model, but imagegen-kit intentionally routes OpenAI image models only through the OpenAI Images protocol."
+    },
+    {
+      "id": "openai/gpt-image-1.5",
+      "name": "OpenAI: GPT-Image-1.5",
+      "provider": "zenmux/openai",
+      "api_model": "gpt-image-1.5",
+      "aliases": ["gpt-image-1.5"],
+      "protocols": ["openai-images"],
+      "source_protocols": ["openai-images", "google-imagen"],
+      "supports_generate": true,
+      "supports_edit": true,
+      "note": "ZenMux also lists Google Imagen compatibility for this model, but imagegen-kit intentionally routes OpenAI image models only through the OpenAI Images protocol."
+    },
+    {
+      "id": "google/gemini-3-pro-image-preview",
+      "name": "Google: Gemini 3 Pro Image Preview",
+      "provider": "zenmux/google",
+      "api_model": "google/gemini-3-pro-image-preview",
+      "aliases": ["gemini-3-pro-image-preview"],
+      "protocols": ["google-gemini"],
+      "source_protocols": ["google-gemini"],
+      "google_method": "generateContent",
+      "supports_generate": true,
+      "supports_edit": false
+    },
+    {
+      "id": "baidu/ernie-image-turbo",
+      "name": "Baidu: ERNIE-Image-Turbo",
+      "provider": "zenmux/google",
+      "api_model": "baidu/ernie-image-turbo",
+      "aliases": [],
+      "protocols": ["google-imagen"],
+      "source_protocols": ["google-imagen"],
+      "google_method": "predict",
+      "supports_generate": true,
+      "supports_edit": false
+    },
+    {
+      "id": "qwen/qwen-image-2.0",
+      "name": "Qwen: Qwen-Image-2.0",
+      "provider": "zenmux/google",
+      "api_model": "qwen/qwen-image-2.0",
+      "aliases": [],
+      "protocols": ["google-imagen"],
+      "source_protocols": ["google-imagen"],
+      "google_method": "predict",
+      "supports_generate": true,
+      "supports_edit": false
+    },
+    {
+      "id": "qwen/qwen-image-2.0-pro",
+      "name": "Qwen: Qwen-Image-2.0-Pro",
+      "provider": "zenmux/google",
+      "api_model": "qwen/qwen-image-2.0-pro",
+      "aliases": [],
+      "protocols": ["google-imagen"],
+      "source_protocols": ["google-imagen"],
+      "google_method": "predict",
+      "supports_generate": true,
+      "supports_edit": false
+    },
+    {
+      "id": "bytedance/doubao-seedream-5.0-lite",
+      "name": "ByteDance: Doubao-Seedream-5.0-lite",
+      "provider": "zenmux/google",
+      "api_model": "bytedance/doubao-seedream-5.0-lite",
+      "aliases": [],
+      "protocols": ["google-imagen"],
+      "source_protocols": ["google-imagen"],
+      "google_method": "predict",
+      "supports_generate": true,
+      "supports_edit": false
+    },
+    {
+      "id": "z-ai/glm-image",
+      "name": "Z.AI: GLM-Image",
+      "provider": "zenmux/google",
+      "api_model": "z-ai/glm-image",
+      "aliases": [],
+      "protocols": ["google-imagen"],
+      "source_protocols": ["google-imagen"],
+      "google_method": "predict",
+      "supports_generate": true,
+      "supports_edit": false
+    },
+    {
+      "id": "tencent/hy-image-v3.0",
+      "name": "HY-Image-V3.0",
+      "provider": "zenmux/google",
+      "api_model": "tencent/hy-image-v3.0",
+      "aliases": [],
+      "protocols": ["google-imagen"],
+      "source_protocols": ["google-imagen"],
+      "google_method": "predict",
+      "supports_generate": true,
+      "supports_edit": false
+    },
+    {
+      "id": "klingai/kling-v2",
+      "name": "KlingAI: Kling-v2",
+      "provider": "zenmux/google",
+      "api_model": "klingai/kling-v2",
+      "aliases": [],
+      "protocols": ["google-imagen"],
+      "source_protocols": ["google-imagen"],
+      "google_method": "predict",
+      "supports_generate": true,
+      "supports_edit": false
+    }
+  ]
+}

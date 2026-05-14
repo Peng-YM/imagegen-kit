@@ -9,6 +9,7 @@ macro_rules! debug_print {
 
 pub mod auth;
 pub mod error;
+pub mod models;
 pub mod provider;
 pub mod utils;
 
