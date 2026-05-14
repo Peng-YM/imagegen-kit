@@ -43,5 +43,6 @@ imagegen-kit status
 ```bash
 imagegen-kit provider --login
 imagegen-kit provider --login --provider zenmux/openai
+imagegen-kit provider --logout --provider zenmux/openai
 imagegen-kit status --json
 ```

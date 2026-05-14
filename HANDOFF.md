@@ -9,7 +9,7 @@ Implemented provider IDs:
 
 OpenAI image models are intentionally not routed through the Google protocol. Use `zenmux/openai` for `gpt-image-*`.
 Model metadata lives in `models.json` and is embedded into the binary via `include_str!("../models.json")`; released binaries do not need a separate runtime copy.
-Provider metadata and credential login are handled by `imagegen-kit provider`; use `provider --list` for model descriptions and `provider --login` for interactive credential storage.
+Provider metadata and credential login/logout are handled by `imagegen-kit provider`; use `provider --list` for model descriptions and `provider --login` / `provider --logout` for credential storage.
 Logged-in providers and generate/edit defaults are reported by `imagegen-kit status`.
 
 Firecrawl source docs:

@@ -247,7 +247,6 @@ enum Commands {
         quiet: bool,
     },
 
-    #[command(alias = "providers")]
     Provider {
         #[arg(long, value_name = "PROVIDER")]
         provider: Option<String>,
@@ -261,8 +260,8 @@ enum Commands {
         #[arg(long)]
         login: bool,
 
-        #[arg(long, value_name = "PROVIDER")]
-        delete: Option<String>,
+        #[arg(long)]
+        logout: bool,
 
         #[arg(long)]
         json: bool,
@@ -379,8 +378,8 @@ async fn run(cli: Cli) -> Result<()> {
             .await
         }
         Commands::Status { json, quiet } => run_status(json, quiet),
-        Commands::Provider { provider, api_key, list, login, delete, json, quiet } => {
-            run_provider(provider, api_key, list, login, delete, json, quiet)
+        Commands::Provider { provider, api_key, list, login, logout, json, quiet } => {
+            run_provider(provider, api_key, list, login, logout, json, quiet)
         }
     }
 }
@@ -571,22 +570,24 @@ fn run_provider(
     api_key: Option<String>,
     list: bool,
     login: bool,
-    delete: Option<String>,
+    logout: bool,
     json: bool,
     quiet: bool,
 ) -> Result<()> {
-    let should_login = login || api_key.is_some();
-    let action_count =
-        usize::from(list) + usize::from(should_login) + usize::from(delete.is_some());
+    if api_key.is_some() && !login {
+        return Err(anyhow!("Use --login with --api-key"));
+    }
+
+    let action_count = usize::from(list) + usize::from(login) + usize::from(logout);
     if action_count > 1 {
-        return Err(anyhow!("Choose only one provider action: --list, --login, or --delete"));
+        return Err(anyhow!("Choose only one provider action: --list, --login, or --logout"));
     }
 
-    if let Some(provider) = delete {
-        return delete_provider_credential(&provider, json, quiet);
+    if logout {
+        return logout_provider(provider, json, quiet);
     }
 
-    if should_login {
+    if login {
         return login_provider(provider, api_key, json, quiet);
     }
 
@@ -650,16 +651,18 @@ fn login_provider(
     }
 }
 
-fn delete_provider_credential(provider: &str, json: bool, quiet: bool) -> Result<()> {
-    let key = parse_provider(Some(provider))
-        .map(|provider_type| auth::provider_key(provider_type.as_str()).to_string())
-        .unwrap_or_else(|_| auth::provider_key(provider).to_string());
-    auth::delete_credential(&key)?;
+fn logout_provider(provider: Option<String>, json: bool, quiet: bool) -> Result<()> {
+    let provider_type = match provider {
+        Some(provider) => parse_provider(Some(&provider))?,
+        None => select_provider_interactively()?,
+    };
+    let key = auth::provider_key(provider_type.as_str());
+    auth::delete_credential(key)?;
     if json {
-        return write_json_pretty(&json!({ "success": true, "deleted": key }));
+        return write_json_pretty(&json!({ "success": true, "logged_out": key }));
     }
     if !quiet {
-        println!("{} {}", "Deleted credential for".green(), key);
+        println!("{} {}", "Logged out from".green(), key);
     }
     Ok(())
 }

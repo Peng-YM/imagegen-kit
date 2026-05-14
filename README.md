@@ -100,8 +100,8 @@ imagegen-kit provider --list
 imagegen-kit provider --list --provider zenmux/google
 imagegen-kit provider --login
 imagegen-kit provider --login --provider zenmux/openai
-imagegen-kit provider --provider zenmux/google --api-key "$ZENMUX_API_KEY"
-imagegen-kit provider --delete zenmux/openai
+imagegen-kit provider --login --provider zenmux/google --api-key "$ZENMUX_API_KEY"
+imagegen-kit provider --logout --provider zenmux/openai
 ```
 
 ### `status`
