@@ -15,6 +15,5 @@ Firecrawl source docs:
 Open questions:
 
 1. Whether to add multiple reference image inputs for `edit`.
-2. Whether to wire the cache into real generation results.
-3. Whether to add streaming image generation.
-4. Whether to publish the bundled agent skill.
+2. Whether to add streaming image generation.
+3. Whether to publish the bundled agent skill.

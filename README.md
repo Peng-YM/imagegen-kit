@@ -1,6 +1,6 @@
 # imagegen-kit
 
-`imagegen-kit` is a Rust CLI for image generation workflows, with provider boundaries, encrypted credential storage, cache management, JSON output, and dry-run support.
+`imagegen-kit` is a Rust CLI for image generation workflows, with provider boundaries, encrypted credential storage, JSON output, and dry-run support.
 
 The first provider integrations target ZenMux:
 
@@ -11,11 +11,10 @@ Both providers use `ZENMUX_API_KEY`.
 
 ## Current Scope
 
-- CLI commands for generation, editing, credential management, provider listing, and cache management
+- CLI commands for generation, editing, credential management, and provider listing
 - ZenMux OpenAI Images provider
 - ZenMux Google Gemini / Vertex AI provider
 - Encrypted local credential storage
-- Cache index scaffolding
 - Dry-run output for validating command shape before real API calls
 - JSON output for agent and script usage
 
@@ -38,9 +37,6 @@ imagegen-kit generate "a nano banana dish in a fancy restaurant" \
 
 # Preview without calling ZenMux
 imagegen-kit generate "a clean product photo of a ceramic mug" --dry-run --json
-
-# Inspect cache state
-imagegen-kit cache status
 ```
 
 ## Commands
@@ -82,15 +78,6 @@ imagegen-kit login --provider zenmux/openai
 imagegen-kit login --provider zenmux/google --api-key "$ZENMUX_API_KEY"
 imagegen-kit login --list
 imagegen-kit login --delete zenmux
-```
-
-### `cache`
-
-Inspect or clear the local cache index.
-
-```bash
-imagegen-kit cache status
-imagegen-kit cache clear --force
 ```
 
 ## Provider Notes

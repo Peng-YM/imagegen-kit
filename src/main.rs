@@ -1,7 +1,6 @@
 use clap::{Parser, Subcommand};
 use colored::Colorize;
 use imagegen_kit::auth;
-use imagegen_kit::cache::{is_cache_disabled, CacheManager, CACHE_DISABLE_ENV_VAR};
 use imagegen_kit::error::{anyhow, Result};
 use imagegen_kit::provider::ProviderType;
 use imagegen_kit::provider::{create_provider, supported_providers, EditRequest, GenerateRequest};
@@ -49,7 +48,6 @@ struct DryRunResultJson {
     output_compression: Option<u8>,
     background: Option<String>,
     api_key_source: Option<String>,
-    cache_disabled: bool,
     would_create: Vec<String>,
 }
 
@@ -63,7 +61,7 @@ struct CommandResultJson {
 
 #[derive(Parser, Debug)]
 #[command(name = "imagegen-kit")]
-#[command(about = "Image generation CLI scaffold for AI agents")]
+#[command(about = "Image generation CLI for ZenMux providers")]
 #[command(version)]
 #[command(after_help = "\
 EXAMPLES:
@@ -84,9 +82,6 @@ EXAMPLES:
 
     # List configured credentials
     imagegen-kit login --list
-
-    # Show cache status
-    imagegen-kit cache status
 ")]
 struct Cli {
     #[command(subcommand)]
@@ -100,9 +95,6 @@ impl Cli {
             | Commands::Edit { json, .. }
             | Commands::Login { json, .. }
             | Commands::Providers { json } => *json,
-            Commands::Cache { cache_command } => match cache_command {
-                CacheCommands::Status { json } | CacheCommands::Clear { json, .. } => *json,
-            },
         }
     }
 }
@@ -209,11 +201,6 @@ enum Commands {
         overwrite: bool,
     },
 
-    Cache {
-        #[command(subcommand)]
-        cache_command: CacheCommands,
-    },
-
     Login {
         #[arg(long, value_name = "PROVIDER")]
         provider: Option<String>,
@@ -235,21 +222,6 @@ enum Commands {
     },
 
     Providers {
-        #[arg(long)]
-        json: bool,
-    },
-}
-
-#[derive(Subcommand, Debug)]
-enum CacheCommands {
-    Status {
-        #[arg(long)]
-        json: bool,
-    },
-    Clear {
-        #[arg(long)]
-        force: bool,
-
         #[arg(long)]
         json: bool,
     },
@@ -361,7 +333,6 @@ async fn run(cli: Cli) -> Result<()> {
             )
             .await
         }
-        Commands::Cache { cache_command } => run_cache(cache_command),
         Commands::Login { provider, api_key, list, delete, json, quiet } => {
             run_login(provider, api_key, list, delete, json, quiet)
         }
@@ -421,7 +392,6 @@ async fn run_generate(
                 output_compression,
                 background,
                 api_key_source,
-                cache_disabled: is_cache_disabled(),
                 would_create,
             },
             json,
@@ -511,7 +481,6 @@ async fn run_edit(
                 output_compression,
                 background,
                 api_key_source,
-                cache_disabled: is_cache_disabled(),
                 would_create,
             },
             json,
@@ -546,43 +515,6 @@ async fn run_edit(
         .await?;
 
     print_command_result(result.provider, result.model, result.artifacts, json, quiet)
-}
-
-fn run_cache(cache_command: CacheCommands) -> Result<()> {
-    let cache = CacheManager::new()?;
-
-    match cache_command {
-        CacheCommands::Status { json } => {
-            let (entries, bytes) = cache.cache_size()?;
-            if json {
-                write_json_pretty(&json!({
-                    "cache_dir": cache.cache_dir(),
-                    "entries": entries,
-                    "bytes": bytes,
-                    "disabled_env_var": CACHE_DISABLE_ENV_VAR,
-                    "disabled": is_cache_disabled(),
-                }))
-            } else {
-                println!("{} {}", "Cache directory:".bold(), cache.cache_dir().display());
-                println!("{} {}", "Entries:".bold(), entries);
-                println!("{} {}", "Size:".bold(), bytes);
-                println!("{} {}", "Disable with:".bold(), CACHE_DISABLE_ENV_VAR);
-                Ok(())
-            }
-        }
-        CacheCommands::Clear { force, json } => {
-            if !force {
-                return Err(anyhow!("Refusing to clear cache without --force"));
-            }
-            cache.clear()?;
-            if json {
-                write_json_pretty(&json!({ "success": true, "cleared": true }))
-            } else {
-                println!("{}", "Cache cleared".green());
-                Ok(())
-            }
-        }
-    }
 }
 
 fn run_login(
