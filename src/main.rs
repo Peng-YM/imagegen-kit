@@ -366,6 +366,7 @@ async fn run_generate(
 
     let output_dir = output_dir.unwrap_or(default_output_dir()?);
     let provider_type = parse_provider(provider.as_deref())?;
+    validate_provider_model(&provider_type, model.as_deref(), false)?;
     let (api_key, api_key_source) = resolve_api_key(&provider_type, api_key)?;
     let extension = output_extension(output_format.as_deref());
 
@@ -459,6 +460,7 @@ async fn run_edit(
 
     let output_dir = output_dir.unwrap_or(default_output_dir()?);
     let provider_type = parse_provider(provider.as_deref())?;
+    validate_provider_model(&provider_type, model.as_deref(), true)?;
     let (api_key, api_key_source) = resolve_api_key(&provider_type, api_key)?;
     let extension = output_extension(output_format.as_deref());
     let would_create =
@@ -617,6 +619,39 @@ fn parse_provider(provider: Option<&str>) -> Result<ProviderType> {
         .ok_or_else(|| anyhow!("Failed to resolve provider"))
 }
 
+fn validate_provider_model(
+    provider_type: &ProviderType,
+    model: Option<&str>,
+    is_edit: bool,
+) -> Result<()> {
+    if provider_type != &ProviderType::ZenmuxGoogle {
+        return Ok(());
+    }
+
+    if is_edit {
+        return Err(anyhow!(
+            "zenmux/google does not support image editing in imagegen-kit. Use --provider zenmux/openai for OpenAI image editing."
+        ));
+    }
+
+    if let Some(model) = model {
+        if !is_google_image_model(model) {
+            return Err(anyhow!(
+                "zenmux/google only supports Google/Gemini image models. Use --provider zenmux/openai for OpenAI image models such as gpt-image-2."
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn is_google_image_model(model: &str) -> bool {
+    model.starts_with("google/")
+        || model.starts_with("gemini")
+        || model.contains("/gemini")
+        || model.starts_with("publishers/google/")
+}
+
 fn resolve_api_key(
     provider_type: &ProviderType,
     explicit_api_key: Option<String>,
@@ -730,4 +765,32 @@ fn print_command_result(
         println!("{}", artifact.path.display());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{validate_provider_model, ProviderType};
+
+    #[test]
+    fn rejects_openai_models_on_google_provider() {
+        let result =
+            validate_provider_model(&ProviderType::ZenmuxGoogle, Some("openai/gpt-image-2"), false);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn accepts_google_models_on_google_provider() {
+        let result = validate_provider_model(
+            &ProviderType::ZenmuxGoogle,
+            Some("google/gemini-3-pro-image-preview"),
+            false,
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn rejects_google_provider_for_edits() {
+        let result = validate_provider_model(&ProviderType::ZenmuxGoogle, None, true);
+        assert!(result.is_err());
+    }
 }

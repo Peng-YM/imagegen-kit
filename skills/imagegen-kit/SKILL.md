@@ -9,7 +9,7 @@ description: >-
 
 # imagegen-kit
 
-`imagegen-kit` is a Rust CLI scaffold for image generation workflows.
+`imagegen-kit` is a Rust CLI for image generation workflows.
 
 ## Readiness Check
 
@@ -23,6 +23,7 @@ imagegen-kit --version && imagegen-kit providers && imagegen-kit --help
 - `zenmux/google`: Google Gemini / Vertex AI protocol, default generate model `google/gemini-3-pro-image-preview`
 
 Both providers use `ZENMUX_API_KEY`.
+OpenAI image models must use `zenmux/openai`; do not call them through `zenmux/google`.
 
 ## Usage
 

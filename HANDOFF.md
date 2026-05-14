@@ -5,7 +5,9 @@
 Implemented provider IDs:
 
 1. `zenmux/openai`: OpenAI Images protocol, default model `gpt-image-2`.
-2. `zenmux/google`: Google Gemini / Vertex AI protocol, default generate model `google/gemini-3-pro-image-preview`, default edit model `openai/gpt-image-2`.
+2. `zenmux/google`: Google Gemini / Vertex AI protocol, default generate model `google/gemini-3-pro-image-preview`.
+
+OpenAI image models are intentionally not routed through the Google protocol. Use `zenmux/openai` for `gpt-image-*`.
 
 Firecrawl source docs:
 

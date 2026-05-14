@@ -8,6 +8,7 @@ The first provider integrations target ZenMux:
 - `zenmux/google`: ZenMux Google Gemini / Vertex AI protocol, `https://zenmux.ai/api/vertex-ai/v1/*`
 
 Both providers use `ZENMUX_API_KEY`.
+OpenAI image models must use `zenmux/openai`; `zenmux/google` is restricted to Google/Gemini image models.
 
 ## Current Scope
 
@@ -97,10 +98,10 @@ Uses the OpenAI Images protocol documented by ZenMux.
 Uses the Google Gemini / Vertex AI protocol documented by ZenMux.
 
 - Base URL: `https://zenmux.ai/api/vertex-ai/v1`
-- Google image models use `:generateContent`
-- Non-Google image models such as `openai/gpt-image-2` use `:predict`
+- Supports Google/Gemini image models through `:generateContent`
+- Does not route OpenAI image models through the Google protocol; use `zenmux/openai` for `gpt-image-*`
 - Default generate model: `google/gemini-3-pro-image-preview`
-- Default edit model: `openai/gpt-image-2`
+- Image editing is not exposed through `zenmux/google` in this CLI
 - Auth: `x-goog-api-key: $ZENMUX_API_KEY`
 
 Firecrawl snapshots of the ZenMux docs used for this implementation are saved in:

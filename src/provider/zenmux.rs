@@ -15,7 +15,6 @@ const ZENMUX_OPENAI_BASE_URL: &str = "https://zenmux.ai/api/v1";
 const ZENMUX_VERTEX_BASE_URL: &str = "https://zenmux.ai/api/vertex-ai/v1";
 const DEFAULT_OPENAI_MODEL: &str = "gpt-image-2";
 const DEFAULT_GOOGLE_MODEL: &str = "google/gemini-3-pro-image-preview";
-const DEFAULT_GOOGLE_EDIT_MODEL: &str = "openai/gpt-image-2";
 
 pub struct ZenmuxOpenAiProvider {
     api_key: Option<String>,
@@ -165,33 +164,24 @@ impl ImageProvider for ZenmuxGoogleProvider {
         mut progress_cb: Box<dyn FnMut(ProgressUpdate) + Send>,
     ) -> Result<ImageResult> {
         let model = request.model.clone().unwrap_or_else(|| DEFAULT_GOOGLE_MODEL.to_string());
-        if is_google_model(&model) {
-            progress_cb(ProgressUpdate::new(
-                "Calling ZenMux Google generateContent API".to_string(),
+        if !is_google_model(&model) {
+            return Err(anyhow!(
+                "zenmux/google only supports Google/Gemini image models. Use --provider zenmux/openai for OpenAI image models such as gpt-image-2."
             ));
-            self.generate_content(request, model).await
-        } else {
-            progress_cb(ProgressUpdate::new(
-                "Calling ZenMux Vertex generate_images API".to_string(),
-            ));
-            self.generate_images(request, model).await
         }
+
+        progress_cb(ProgressUpdate::new("Calling ZenMux Google generateContent API".to_string()));
+        self.generate_content(request, model).await
     }
 
     async fn edit(
         &self,
-        request: EditRequest,
-        mut progress_cb: Box<dyn FnMut(ProgressUpdate) + Send>,
+        _request: EditRequest,
+        _progress_cb: Box<dyn FnMut(ProgressUpdate) + Send>,
     ) -> Result<ImageResult> {
-        let model = request.model.clone().unwrap_or_else(|| DEFAULT_GOOGLE_EDIT_MODEL.to_string());
-        if is_google_model(&model) {
-            return Err(anyhow!(
-                "ZenMux Google image editing uses Vertex edit_image for non-Google image models; choose --model openai/gpt-image-2"
-            ));
-        }
-
-        progress_cb(ProgressUpdate::new("Calling ZenMux Vertex edit_image API".to_string()));
-        self.edit_image(request, model).await
+        Err(anyhow!(
+            "zenmux/google does not support image editing in imagegen-kit. Use --provider zenmux/openai for OpenAI image editing."
+        ))
     }
 }
 
@@ -227,56 +217,6 @@ impl ZenmuxGoogleProvider {
             &images,
             &request.output_dir,
             "image",
-            request.output_format.as_deref(),
-            request.overwrite,
-        )?;
-
-        Ok(ImageResult { provider: "zenmux/google".to_string(), model: Some(model), artifacts })
-    }
-
-    async fn generate_images(
-        &self,
-        request: GenerateRequest,
-        model: String,
-    ) -> Result<ImageResult> {
-        let body = vertex_generate_images_body(&request);
-        let response = self
-            .client
-            .post(vertex_url(&model, "predict"))
-            .header("x-goog-api-key", self.api_key()?)
-            .json(&body)
-            .send()
-            .await?;
-
-        let value = parse_json_response(response).await?;
-        let images = extract_vertex_prediction_images(&value)?;
-        let artifacts = save_base64_images(
-            &images,
-            &request.output_dir,
-            "image",
-            request.output_format.as_deref(),
-            request.overwrite,
-        )?;
-
-        Ok(ImageResult { provider: "zenmux/google".to_string(), model: Some(model), artifacts })
-    }
-
-    async fn edit_image(&self, request: EditRequest, model: String) -> Result<ImageResult> {
-        let body = vertex_edit_image_body(&request)?;
-        let response = self
-            .client
-            .post(vertex_url(&model, "predict"))
-            .header("x-goog-api-key", self.api_key()?)
-            .json(&body)
-            .send()
-            .await?;
-
-        let value = parse_json_response(response).await?;
-        let images = extract_vertex_prediction_images(&value)?;
-        let artifacts = save_base64_images(
-            &images,
-            &request.output_dir,
-            "edited-image",
             request.output_format.as_deref(),
             request.overwrite,
         )?;
@@ -324,85 +264,6 @@ fn is_google_model(model: &str) -> bool {
         || model.starts_with("gemini")
         || model.contains("/gemini")
         || model.starts_with("publishers/google/")
-}
-
-fn vertex_generate_images_body(request: &GenerateRequest) -> Value {
-    let mut body = json!({
-        "instances": [{ "prompt": request.prompt }],
-        "parameters": {
-            "sampleCount": request.count
-        },
-        "imageSize": request.size,
-    });
-
-    if let Some(negative_prompt) = &request.negative_prompt {
-        body["parameters"]["negativePrompt"] = json!(negative_prompt);
-    }
-    insert_optional(&mut body, "quality", request.quality.as_deref());
-    insert_vertex_output_options(
-        &mut body,
-        request.output_format.as_deref(),
-        request.output_compression,
-    );
-    body
-}
-
-fn vertex_edit_image_body(request: &EditRequest) -> Result<Value> {
-    let mut reference_images = vec![json!({
-        "referenceImage": file_image_json(&request.input)?,
-        "referenceId": 1,
-        "referenceType": "REFERENCE_TYPE_RAW",
-    })];
-
-    if let Some(mask) = &request.mask {
-        reference_images.push(json!({
-            "referenceImage": file_image_json(mask)?,
-            "referenceId": 2,
-            "referenceType": "REFERENCE_TYPE_MASK",
-            "maskImageConfig": {
-                "maskMode": "MASK_MODE_USER_PROVIDED"
-            }
-        }));
-    }
-
-    let mut body = json!({
-        "instances": [
-            {
-                "prompt": request.prompt,
-                "referenceImages": reference_images
-            }
-        ],
-        "parameters": {
-            "sampleCount": 1
-        },
-        "imageSize": request.size,
-    });
-
-    insert_optional(&mut body, "quality", request.quality.as_deref());
-    insert_vertex_output_options(
-        &mut body,
-        request.output_format.as_deref(),
-        request.output_compression,
-    );
-    Ok(body)
-}
-
-fn insert_vertex_output_options(
-    body: &mut Value,
-    output_format: Option<&str>,
-    output_compression: Option<u8>,
-) {
-    if output_format.is_none() && output_compression.is_none() {
-        return;
-    }
-
-    let output_options = &mut body["parameters"]["outputOptions"];
-    if let Some(output_format) = output_format {
-        output_options["mimeType"] = json!(format_to_mime(output_format));
-    }
-    if let Some(output_compression) = output_compression {
-        output_options["compressionQuality"] = json!(output_compression);
-    }
 }
 
 fn insert_optional(body: &mut Value, key: &str, value: Option<&str>) {
@@ -490,52 +351,6 @@ struct B64Image {
     b64: String,
     mime_type: String,
     revised_prompt: Option<String>,
-}
-
-fn extract_vertex_prediction_images(value: &Value) -> Result<Vec<B64Image>> {
-    let predictions = value
-        .get("predictions")
-        .and_then(Value::as_array)
-        .ok_or_else(|| anyhow!("ZenMux Vertex response did not include predictions"))?;
-
-    let mut images = Vec::new();
-    for prediction in predictions {
-        if let Some(b64) = prediction.get("bytesBase64Encoded").and_then(Value::as_str) {
-            images.push(B64Image {
-                b64: b64.to_string(),
-                mime_type: prediction
-                    .get("mimeType")
-                    .and_then(Value::as_str)
-                    .unwrap_or("image/png")
-                    .to_string(),
-                revised_prompt: prediction
-                    .get("prompt")
-                    .and_then(Value::as_str)
-                    .map(str::to_string),
-            });
-        } else if let Some(image) = prediction.get("image") {
-            if let Some(b64) = image.get("bytesBase64Encoded").and_then(Value::as_str) {
-                images.push(B64Image {
-                    b64: b64.to_string(),
-                    mime_type: image
-                        .get("mimeType")
-                        .and_then(Value::as_str)
-                        .unwrap_or("image/png")
-                        .to_string(),
-                    revised_prompt: prediction
-                        .get("prompt")
-                        .and_then(Value::as_str)
-                        .map(str::to_string),
-                });
-            }
-        }
-    }
-
-    if images.is_empty() {
-        return Err(anyhow!("ZenMux Vertex response contained no image bytes"));
-    }
-
-    Ok(images)
 }
 
 fn extract_generate_content_images(value: &Value) -> Result<Vec<B64Image>> {
@@ -636,13 +451,6 @@ fn file_part(path: &Path) -> Result<Part> {
     let file_name = path.file_name().and_then(|name| name.to_str()).unwrap_or("image").to_string();
     let mime_type = mime_for_path(path);
     Ok(Part::bytes(bytes).file_name(file_name).mime_str(&mime_type)?)
-}
-
-fn file_image_json(path: &Path) -> Result<Value> {
-    Ok(json!({
-        "bytesBase64Encoded": BASE64.encode(fs::read(path)?),
-        "mimeType": mime_for_path(path),
-    }))
 }
 
 fn mime_for_path(path: &Path) -> String {
