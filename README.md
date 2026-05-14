@@ -1,6 +1,6 @@
 # imagegen-kit
 
-`imagegen-kit` is a Rust CLI for image generation workflows. It mirrors the structure of `pdf-to-markdown`: a small command-line entrypoint, reusable library modules, provider boundaries, encrypted credential storage, cache management, JSON output, and dry-run support.
+`imagegen-kit` is a Rust CLI for image generation workflows, with provider boundaries, encrypted credential storage, cache management, JSON output, and dry-run support.
 
 The first provider integrations target ZenMux:
 
@@ -18,7 +18,6 @@ Both providers use `ZENMUX_API_KEY`.
 - Cache index scaffolding
 - Dry-run output for validating command shape before real API calls
 - JSON output for agent and script usage
-- Release/build skeleton copied in spirit from `pdf-to-markdown`
 
 ## Usage
 
