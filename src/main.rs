@@ -15,6 +15,7 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(i32)]
@@ -465,6 +466,7 @@ async fn run_generate(
 
     ensure_dir_exists(&output_dir)?;
     let progress = progress_bar(quiet || json);
+    let progress_updates = progress.clone();
     let provider = create_provider(provider_type.clone(), api_key);
     let request = GenerateRequest {
         prompt,
@@ -483,11 +485,12 @@ async fn run_generate(
         .generate(
             request,
             Box::new(move |update| {
-                progress.set_message(update.message);
-                progress.inc(1);
+                progress_updates.set_message(update.message);
+                progress_updates.inc(1);
             }),
         )
         .await?;
+    progress.finish_and_clear();
 
     print_command_result(&result, json, quiet)?;
     maybe_show_artifacts(&result.artifacts, show);
@@ -560,6 +563,7 @@ async fn run_edit(
 
     ensure_dir_exists(&output_dir)?;
     let progress = progress_bar(quiet || json);
+    let progress_updates = progress.clone();
     let provider = create_provider(provider_type, api_key);
     let request = EditRequest {
         input,
@@ -578,11 +582,12 @@ async fn run_edit(
         .edit(
             request,
             Box::new(move |update| {
-                progress.set_message(update.message);
-                progress.inc(1);
+                progress_updates.set_message(update.message);
+                progress_updates.inc(1);
             }),
         )
         .await?;
+    progress.finish_and_clear();
 
     print_command_result(&result, json, quiet)?;
     maybe_show_artifacts(&result.artifacts, show);
@@ -898,9 +903,11 @@ fn progress_bar(hidden: bool) -> ProgressBar {
 
     let progress = ProgressBar::new_spinner();
     progress.set_style(
-        ProgressStyle::with_template("{spinner:.green} {msg}")
-            .unwrap_or_else(|_| ProgressStyle::default_spinner()),
+        ProgressStyle::with_template("{spinner:.green} {elapsed_precise} {msg}")
+            .unwrap_or_else(|_| ProgressStyle::default_spinner())
+            .tick_strings(&["-", "\\", "|", "/"]),
     );
+    progress.enable_steady_tick(Duration::from_millis(120));
     progress
 }
 

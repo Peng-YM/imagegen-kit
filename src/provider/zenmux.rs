@@ -44,7 +44,7 @@ impl ImageProvider for ZenmuxOpenAiProvider {
         request: GenerateRequest,
         mut progress_cb: Box<dyn FnMut(ProgressUpdate) + Send>,
     ) -> Result<ImageResult> {
-        progress_cb(ProgressUpdate::new("Calling ZenMux OpenAI Images API".to_string()));
+        progress_cb(ProgressUpdate::new("Waiting for ZenMux OpenAI Images API".to_string()));
 
         let model_entry =
             resolve_model("zenmux/openai", request.model.as_deref(), ModelOperation::Generate)?;
@@ -71,6 +71,7 @@ impl ImageProvider for ZenmuxOpenAiProvider {
             .await?;
 
         let response = parse_openai_response(response).await?;
+        progress_cb(ProgressUpdate::new("Saving generated images".to_string()));
         let artifacts = save_openai_data(
             &self.client,
             &response.data,
@@ -93,7 +94,7 @@ impl ImageProvider for ZenmuxOpenAiProvider {
         request: EditRequest,
         mut progress_cb: Box<dyn FnMut(ProgressUpdate) + Send>,
     ) -> Result<ImageResult> {
-        progress_cb(ProgressUpdate::new("Calling ZenMux OpenAI Images edit API".to_string()));
+        progress_cb(ProgressUpdate::new("Waiting for ZenMux OpenAI Images edit API".to_string()));
 
         let model_entry =
             resolve_model("zenmux/openai", request.model.as_deref(), ModelOperation::Edit)?;
@@ -129,6 +130,7 @@ impl ImageProvider for ZenmuxOpenAiProvider {
             .await?;
 
         let response = parse_openai_response(response).await?;
+        progress_cb(ProgressUpdate::new("Saving edited images".to_string()));
         let artifacts = save_openai_data(
             &self.client,
             &response.data,
@@ -181,15 +183,15 @@ impl ImageProvider for ZenmuxGoogleProvider {
         match model_entry.google_method.unwrap_or(GoogleMethod::GenerateContent) {
             GoogleMethod::GenerateContent => {
                 progress_cb(ProgressUpdate::new(
-                    "Calling ZenMux Google generateContent API".to_string(),
+                    "Waiting for ZenMux Google generateContent API".to_string(),
                 ));
-                self.generate_content(request, model_entry).await
+                self.generate_content(request, model_entry, &mut progress_cb).await
             }
             GoogleMethod::Predict => {
                 progress_cb(ProgressUpdate::new(
-                    "Calling ZenMux Google Imagen predict API".to_string(),
+                    "Waiting for ZenMux Google Imagen predict API".to_string(),
                 ));
-                self.generate_images(request, model_entry).await
+                self.generate_images(request, model_entry, &mut progress_cb).await
             }
         }
     }
@@ -210,6 +212,7 @@ impl ZenmuxGoogleProvider {
         &self,
         request: GenerateRequest,
         model_entry: ModelEntry,
+        progress_cb: &mut (dyn FnMut(ProgressUpdate) + Send),
     ) -> Result<ImageResult> {
         let api_model = model_entry.api_model.clone();
         let body = json!({
@@ -233,6 +236,7 @@ impl ZenmuxGoogleProvider {
             .await?;
 
         let value = parse_json_response(response).await?;
+        progress_cb(ProgressUpdate::new("Saving generated images".to_string()));
         let images = extract_generate_content_images(&value)?;
         let artifacts = save_base64_images(
             &images,
@@ -253,6 +257,7 @@ impl ZenmuxGoogleProvider {
         &self,
         request: GenerateRequest,
         model_entry: ModelEntry,
+        progress_cb: &mut (dyn FnMut(ProgressUpdate) + Send),
     ) -> Result<ImageResult> {
         let api_model = model_entry.api_model.clone();
         let body = vertex_generate_images_body(&request);
@@ -265,6 +270,7 @@ impl ZenmuxGoogleProvider {
             .await?;
 
         let value = parse_json_response(response).await?;
+        progress_cb(ProgressUpdate::new("Saving generated images".to_string()));
         let images = extract_vertex_prediction_images(&value)?;
         let artifacts = save_base64_images(
             &images,
