@@ -1,13 +1,12 @@
 # Handoff
 
-`imagegen-kit` is currently a compile-ready Rust CLI with ZenMux image providers.
+`imagegen-kit` is currently a compile-ready Rust CLI with a ZenMux image provider.
 
-Implemented provider IDs:
+Implemented provider ID:
 
-1. `zenmux/openai`: OpenAI Images protocol, default model `gpt-image-2`.
-2. `zenmux/google`: Google Gemini / Imagen / Vertex AI protocol, default generate model `google/gemini-3-pro-image-preview`.
+1. `zenmux`: one ZenMux login, default generate/edit model `gpt-image-2`.
 
-OpenAI image models are intentionally not routed through the Google protocol. Use `zenmux/openai` for `gpt-image-*`.
+OpenAI image models are intentionally not routed through the Google protocol; model metadata routes them through the OpenAI Images endpoint. Gemini and non-OpenAI Imagen models route through the ZenMux Google endpoint.
 Model metadata lives in `models.json` and is embedded into the binary via `include_str!("../models.json")`; released binaries do not need a separate runtime copy.
 Provider metadata and credential login/logout are handled by `imagegen-kit provider`; use `provider --list` for model descriptions and `provider --login` / `provider --logout` for credential storage.
 Logged-in providers and generate/edit defaults are reported by `imagegen-kit status`.

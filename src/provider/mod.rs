@@ -2,22 +2,20 @@ pub mod traits;
 mod zenmux;
 
 pub use traits::*;
-pub use zenmux::{ZenmuxGoogleProvider, ZenmuxOpenAiProvider};
+pub use zenmux::ZenmuxProvider;
 
 use std::str::FromStr;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProviderType {
-    ZenmuxOpenAi,
-    ZenmuxGoogle,
+    Zenmux,
 }
 
 impl ProviderType {
     pub fn as_str(&self) -> &'static str {
         match self {
-            ProviderType::ZenmuxOpenAi => "zenmux/openai",
-            ProviderType::ZenmuxGoogle => "zenmux/google",
+            ProviderType::Zenmux => "zenmux",
         }
     }
 
@@ -27,15 +25,13 @@ impl ProviderType {
 
     pub fn display_name(&self) -> &'static str {
         match self {
-            ProviderType::ZenmuxOpenAi => "ZenMux OpenAI Images",
-            ProviderType::ZenmuxGoogle => "ZenMux Google Gemini / Imagen",
+            ProviderType::Zenmux => "ZenMux",
         }
     }
 
     pub fn protocol(&self) -> &'static str {
         match self {
-            ProviderType::ZenmuxOpenAi => "OpenAI Images",
-            ProviderType::ZenmuxGoogle => "Google Gemini / Imagen / Vertex AI",
+            ProviderType::Zenmux => "OpenAI Images / Google Gemini / Google Imagen",
         }
     }
 }
@@ -45,11 +41,7 @@ impl FromStr for ProviderType {
 
     fn from_str(value: &str) -> std::result::Result<Self, Self::Err> {
         match value.to_lowercase().as_str() {
-            "zenmux" | "zenmux/openai" | "zenmux-openai" | "openai" | "openai/images" => {
-                Ok(ProviderType::ZenmuxOpenAi)
-            }
-            "zenmux/google" | "zenmux-google" | "zenmux/gemini" | "zenmux-vertex" | "google"
-            | "gemini" | "vertex" | "vertex-ai" => Ok(ProviderType::ZenmuxGoogle),
+            "zenmux" => Ok(ProviderType::Zenmux),
             _ => Err(()),
         }
     }
@@ -60,13 +52,12 @@ pub fn create_provider(
     api_key: Option<String>,
 ) -> Arc<dyn ImageProvider> {
     match provider_type {
-        ProviderType::ZenmuxOpenAi => Arc::new(ZenmuxOpenAiProvider::new(api_key)),
-        ProviderType::ZenmuxGoogle => Arc::new(ZenmuxGoogleProvider::new(api_key)),
+        ProviderType::Zenmux => Arc::new(ZenmuxProvider::new(api_key)),
     }
 }
 
 pub fn supported_providers() -> Vec<ProviderType> {
-    vec![ProviderType::ZenmuxOpenAi, ProviderType::ZenmuxGoogle]
+    vec![ProviderType::Zenmux]
 }
 
 #[cfg(test)]
@@ -75,11 +66,12 @@ mod tests {
     use std::str::FromStr;
 
     #[test]
-    fn parses_provider_aliases() {
-        assert_eq!(ProviderType::from_str("openai").unwrap(), ProviderType::ZenmuxOpenAi);
-        assert_eq!(ProviderType::from_str("zenmux/openai").unwrap(), ProviderType::ZenmuxOpenAi);
-        assert_eq!(ProviderType::from_str("google").unwrap(), ProviderType::ZenmuxGoogle);
-        assert_eq!(ProviderType::from_str("zenmux/gemini").unwrap(), ProviderType::ZenmuxGoogle);
+    fn parses_zenmux_provider() {
+        assert_eq!(ProviderType::from_str("zenmux").unwrap(), ProviderType::Zenmux);
+        assert!(ProviderType::from_str("zenmux/openai").is_err());
+        assert!(ProviderType::from_str("zenmux/google").is_err());
+        assert!(ProviderType::from_str("openai").is_err());
+        assert!(ProviderType::from_str("google").is_err());
         assert!(ProviderType::from_str("unknown").is_err());
     }
 }

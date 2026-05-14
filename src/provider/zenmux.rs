@@ -15,12 +15,12 @@ use std::time::Duration;
 const ZENMUX_OPENAI_BASE_URL: &str = "https://zenmux.ai/api/v1";
 const ZENMUX_VERTEX_BASE_URL: &str = "https://zenmux.ai/api/vertex-ai/v1";
 
-pub struct ZenmuxOpenAiProvider {
+pub struct ZenmuxProvider {
     api_key: Option<String>,
     client: reqwest::Client,
 }
 
-impl ZenmuxOpenAiProvider {
+impl ZenmuxProvider {
     pub fn new(api_key: Option<String>) -> Self {
         Self { api_key, client: http_client() }
     }
@@ -31,23 +31,12 @@ impl ZenmuxOpenAiProvider {
             .filter(|key| !key.is_empty())
             .ok_or_else(|| anyhow!("ZENMUX_API_KEY is required. Run imagegen-kit provider --login"))
     }
-}
-
-#[async_trait::async_trait]
-impl ImageProvider for ZenmuxOpenAiProvider {
-    fn name(&self) -> &'static str {
-        "ZenMux OpenAI Images"
-    }
-
-    async fn generate(
+    async fn generate_openai_images(
         &self,
         request: GenerateRequest,
-        mut progress_cb: Box<dyn FnMut(ProgressUpdate) + Send>,
+        model_entry: ModelEntry,
+        progress_cb: &mut (dyn FnMut(ProgressUpdate) + Send),
     ) -> Result<ImageResult> {
-        progress_cb(ProgressUpdate::new("Waiting for ZenMux OpenAI Images API".to_string()));
-
-        let model_entry =
-            resolve_model("zenmux/openai", request.model.as_deref(), ModelOperation::Generate)?;
         let api_model = model_entry.api_model.clone();
         let mut body = json!({
             "model": api_model,
@@ -82,22 +71,15 @@ impl ImageProvider for ZenmuxOpenAiProvider {
         )
         .await?;
 
-        Ok(ImageResult {
-            provider: "zenmux/openai".to_string(),
-            model: Some(model_entry.id),
-            artifacts,
-        })
+        Ok(ImageResult { provider: "zenmux".to_string(), model: Some(model_entry.id), artifacts })
     }
 
-    async fn edit(
+    async fn edit_openai_images(
         &self,
         request: EditRequest,
-        mut progress_cb: Box<dyn FnMut(ProgressUpdate) + Send>,
+        model_entry: ModelEntry,
+        progress_cb: &mut (dyn FnMut(ProgressUpdate) + Send),
     ) -> Result<ImageResult> {
-        progress_cb(ProgressUpdate::new("Waiting for ZenMux OpenAI Images edit API".to_string()));
-
-        let model_entry =
-            resolve_model("zenmux/openai", request.model.as_deref(), ModelOperation::Edit)?;
         let api_model = model_entry.api_model.clone();
         let mut form = Form::new()
             .text("model", api_model)
@@ -141,73 +123,9 @@ impl ImageProvider for ZenmuxOpenAiProvider {
         )
         .await?;
 
-        Ok(ImageResult {
-            provider: "zenmux/openai".to_string(),
-            model: Some(model_entry.id),
-            artifacts,
-        })
-    }
-}
-
-pub struct ZenmuxGoogleProvider {
-    api_key: Option<String>,
-    client: reqwest::Client,
-}
-
-impl ZenmuxGoogleProvider {
-    pub fn new(api_key: Option<String>) -> Self {
-        Self { api_key, client: http_client() }
+        Ok(ImageResult { provider: "zenmux".to_string(), model: Some(model_entry.id), artifacts })
     }
 
-    fn api_key(&self) -> Result<&str> {
-        self.api_key
-            .as_deref()
-            .filter(|key| !key.is_empty())
-            .ok_or_else(|| anyhow!("ZENMUX_API_KEY is required. Run imagegen-kit provider --login"))
-    }
-}
-
-#[async_trait::async_trait]
-impl ImageProvider for ZenmuxGoogleProvider {
-    fn name(&self) -> &'static str {
-        "ZenMux Google Gemini / Imagen"
-    }
-
-    async fn generate(
-        &self,
-        request: GenerateRequest,
-        mut progress_cb: Box<dyn FnMut(ProgressUpdate) + Send>,
-    ) -> Result<ImageResult> {
-        let model_entry =
-            resolve_model("zenmux/google", request.model.as_deref(), ModelOperation::Generate)?;
-        match model_entry.google_method.unwrap_or(GoogleMethod::GenerateContent) {
-            GoogleMethod::GenerateContent => {
-                progress_cb(ProgressUpdate::new(
-                    "Waiting for ZenMux Google generateContent API".to_string(),
-                ));
-                self.generate_content(request, model_entry, &mut progress_cb).await
-            }
-            GoogleMethod::Predict => {
-                progress_cb(ProgressUpdate::new(
-                    "Waiting for ZenMux Google Imagen predict API".to_string(),
-                ));
-                self.generate_images(request, model_entry, &mut progress_cb).await
-            }
-        }
-    }
-
-    async fn edit(
-        &self,
-        _request: EditRequest,
-        _progress_cb: Box<dyn FnMut(ProgressUpdate) + Send>,
-    ) -> Result<ImageResult> {
-        Err(anyhow!(
-            "zenmux/google does not support image editing in imagegen-kit. Use --provider zenmux/openai for OpenAI image editing."
-        ))
-    }
-}
-
-impl ZenmuxGoogleProvider {
     async fn generate_content(
         &self,
         request: GenerateRequest,
@@ -246,11 +164,7 @@ impl ZenmuxGoogleProvider {
             request.overwrite,
         )?;
 
-        Ok(ImageResult {
-            provider: "zenmux/google".to_string(),
-            model: Some(model_entry.id),
-            artifacts,
-        })
+        Ok(ImageResult { provider: "zenmux".to_string(), model: Some(model_entry.id), artifacts })
     }
 
     async fn generate_images(
@@ -280,12 +194,68 @@ impl ZenmuxGoogleProvider {
             request.overwrite,
         )?;
 
-        Ok(ImageResult {
-            provider: "zenmux/google".to_string(),
-            model: Some(model_entry.id),
-            artifacts,
-        })
+        Ok(ImageResult { provider: "zenmux".to_string(), model: Some(model_entry.id), artifacts })
     }
+}
+
+#[async_trait::async_trait]
+impl ImageProvider for ZenmuxProvider {
+    fn name(&self) -> &'static str {
+        "ZenMux"
+    }
+
+    async fn generate(
+        &self,
+        request: GenerateRequest,
+        mut progress_cb: Box<dyn FnMut(ProgressUpdate) + Send>,
+    ) -> Result<ImageResult> {
+        let model_entry =
+            resolve_model("zenmux", request.model.as_deref(), ModelOperation::Generate)?;
+
+        if is_openai_images_model(&model_entry) {
+            progress_cb(ProgressUpdate::new("Waiting for ZenMux OpenAI Images API".to_string()));
+            return self.generate_openai_images(request, model_entry, &mut progress_cb).await;
+        }
+
+        match model_entry.google_method.ok_or_else(|| {
+            anyhow!("Model '{}' does not have a ZenMux endpoint route.", model_entry.id)
+        })? {
+            GoogleMethod::GenerateContent => {
+                progress_cb(ProgressUpdate::new(
+                    "Waiting for ZenMux Google generateContent API".to_string(),
+                ));
+                self.generate_content(request, model_entry, &mut progress_cb).await
+            }
+            GoogleMethod::Predict => {
+                progress_cb(ProgressUpdate::new(
+                    "Waiting for ZenMux Google Imagen predict API".to_string(),
+                ));
+                self.generate_images(request, model_entry, &mut progress_cb).await
+            }
+        }
+    }
+
+    async fn edit(
+        &self,
+        request: EditRequest,
+        mut progress_cb: Box<dyn FnMut(ProgressUpdate) + Send>,
+    ) -> Result<ImageResult> {
+        let model_entry = resolve_model("zenmux", request.model.as_deref(), ModelOperation::Edit)?;
+
+        if !is_openai_images_model(&model_entry) {
+            return Err(anyhow!(
+                "Model '{}' supports image editing, but imagegen-kit does not have an edit endpoint route for it.",
+                model_entry.id
+            ));
+        }
+
+        progress_cb(ProgressUpdate::new("Waiting for ZenMux OpenAI Images edit API".to_string()));
+        self.edit_openai_images(request, model_entry, &mut progress_cb).await
+    }
+}
+
+fn is_openai_images_model(model_entry: &ModelEntry) -> bool {
+    model_entry.protocols.iter().any(|protocol| protocol == "openai-images")
 }
 
 fn http_client() -> reqwest::Client {

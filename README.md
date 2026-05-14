@@ -2,20 +2,18 @@
 
 `imagegen-kit` is a Rust CLI for image generation workflows, with provider boundaries, encrypted credential storage, JSON output, and dry-run support.
 
-The first provider integrations target ZenMux:
+The provider integration targets ZenMux:
 
-- `zenmux/openai`: ZenMux OpenAI Images protocol, `https://zenmux.ai/api/v1/images/*`
-- `zenmux/google`: ZenMux Google Gemini / Vertex AI protocol, `https://zenmux.ai/api/vertex-ai/v1/*`
+- `zenmux`: one ZenMux login, with model-based routing to OpenAI Images, Google Gemini, or Google Imagen endpoints
 
-Both providers use `ZENMUX_API_KEY`.
-OpenAI image models must use `zenmux/openai`; `zenmux/google` supports Gemini and non-OpenAI Imagen models only.
+ZenMux uses `ZENMUX_API_KEY`.
+OpenAI image models are routed only through the OpenAI Images endpoint, even if ZenMux model metadata also lists Google Imagen compatibility.
 Model metadata is stored in [`models.json`](./models.json) and embedded into the binary at compile time.
 
 ## Current Scope
 
 - CLI commands for generation, editing, credential management, and provider listing
-- ZenMux OpenAI Images provider
-- ZenMux Google Gemini / Imagen / Vertex AI provider
+- ZenMux provider with model-based endpoint routing
 - Encrypted local credential storage
 - Dry-run output for validating command shape before real API calls
 - JSON output for agent and script usage
@@ -41,23 +39,20 @@ imagegen-kit provider --login
 # Show logged-in providers, their models, and generate/edit defaults
 imagegen-kit status
 
-# Generate via OpenAI Images protocol
+# Generate via OpenAI Images endpoint
 imagegen-kit generate "a clean product photo of a ceramic mug" \
-  --provider zenmux/openai \
   --model gpt-image-2 \
   --quality high
 
 # Generate and show the saved image inline in iTerm2 or Kitty
 imagegen-kit generate "a clean product photo of a ceramic mug" --show
 
-# Generate via Google Gemini protocol
+# Generate via Google Gemini endpoint
 imagegen-kit generate "a nano banana dish in a fancy restaurant" \
-  --provider zenmux/google \
   --model google/gemini-3-pro-image-preview
 
-# Generate via Google Imagen protocol
+# Generate via Google Imagen endpoint
 imagegen-kit generate "a clean product render" \
-  --provider zenmux/google \
   --model qwen/qwen-image-2.0
 
 # Preview without calling ZenMux
@@ -73,7 +68,6 @@ When `--output-dir` is omitted, images are saved to a new random directory under
 
 ```bash
 imagegen-kit generate "prompt text" \
-  --provider zenmux/openai \
   --model gpt-image-2 \
   --size 1024x1024 \
   --quality high \
@@ -91,7 +85,6 @@ When `--output-dir` is omitted, images are saved to a new random directory under
 ```bash
 imagegen-kit edit ./input.png "edit prompt" \
   --mask ./mask.png \
-  --provider zenmux/openai \
   --model gpt-image-2 \
   --size 1024x1024 \
   --output-dir ./output \
@@ -106,11 +99,10 @@ List provider model metadata and manage encrypted provider credentials.
 
 ```bash
 imagegen-kit provider --list
-imagegen-kit provider --list --provider zenmux/google
+imagegen-kit provider --list --provider zenmux
 imagegen-kit provider --login
-imagegen-kit provider --login --provider zenmux/openai
-imagegen-kit provider --login --provider zenmux/google --api-key "$ZENMUX_API_KEY"
-imagegen-kit provider --logout --provider zenmux/openai
+imagegen-kit provider --login --provider zenmux --api-key "$ZENMUX_API_KEY"
+imagegen-kit provider --logout --provider zenmux
 ```
 
 ### `status`
@@ -124,29 +116,21 @@ imagegen-kit status --json
 
 ## Provider Notes
 
-### `zenmux/openai`
+### `zenmux`
 
-Uses the OpenAI Images protocol documented by ZenMux.
+Uses one ZenMux credential and routes each model according to embedded model metadata.
 
-- Base URL: `https://zenmux.ai/api/v1`
-- Generate endpoint: `/images/generations`
-- Edit endpoint: `/images/edits`
+- OpenAI Images base URL: `https://zenmux.ai/api/v1`
+- OpenAI generate endpoint: `/images/generations`
+- OpenAI edit endpoint: `/images/edits`
+- Google Gemini / Imagen base URL: `https://zenmux.ai/api/vertex-ai/v1`
+- Supports Gemini image models through `:generateContent`
+- Supports non-OpenAI Imagen catalog models through `:predict`
+- Does not route OpenAI image models through the Google protocol
 - Default generate model: `gpt-image-2`
 - Default edit model: `gpt-image-2`
-- Auth: `Authorization: Bearer $ZENMUX_API_KEY`
-
-### `zenmux/google`
-
-Uses the Google Gemini / Imagen / Vertex AI protocol documented by ZenMux.
-
-- Base URL: `https://zenmux.ai/api/vertex-ai/v1`
-- Supports Google/Gemini image models through `:generateContent`
-- Supports non-OpenAI Imagen catalog models through `:predict`
-- Does not route OpenAI image models through the Google protocol; use `zenmux/openai` for `gpt-image-*`
-- Default generate model: `google/gemini-3-pro-image-preview`
-- Default edit model: none
-- Image editing is not exposed through `zenmux/google` in this CLI
-- Auth: `x-goog-api-key: $ZENMUX_API_KEY`
+- OpenAI endpoint auth: `Authorization: Bearer $ZENMUX_API_KEY`
+- Google endpoint auth: `x-goog-api-key: $ZENMUX_API_KEY`
 
 Model routing comes from [`models.json`](./models.json). The file remains readable in the repository, and the Rust code embeds it with `include_str!("../models.json")`, so released binaries do not need a separate runtime copy.
 

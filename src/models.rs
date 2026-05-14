@@ -202,37 +202,46 @@ mod tests {
 
     #[test]
     fn resolves_openai_alias_to_api_model() {
-        let model =
-            resolve_model("zenmux/openai", Some("gpt-image-2"), ModelOperation::Generate).unwrap();
+        let model = resolve_model("zenmux", Some("gpt-image-2"), ModelOperation::Generate).unwrap();
         assert_eq!(model.id, "openai/gpt-image-2");
         assert_eq!(model.api_model, "gpt-image-2");
+        assert!(model.protocols.iter().any(|protocol| protocol == "openai-images"));
+        assert_eq!(model.google_method, None);
     }
 
     #[test]
     fn resolves_defaults_by_operation() {
-        let generate = default_model("zenmux/openai", ModelOperation::Generate).unwrap().unwrap();
-        let edit = default_model("zenmux/openai", ModelOperation::Edit).unwrap().unwrap();
-        let google_edit = default_model("zenmux/google", ModelOperation::Edit).unwrap();
+        let generate = default_model("zenmux", ModelOperation::Generate).unwrap().unwrap();
+        let edit = default_model("zenmux", ModelOperation::Edit).unwrap().unwrap();
 
         assert_eq!(generate.id, "openai/gpt-image-2");
         assert_eq!(edit.id, "openai/gpt-image-2");
-        assert!(google_edit.is_none());
     }
 
     #[test]
-    fn keeps_openai_models_out_of_google_provider() {
+    fn resolves_gemini_models_for_generate_content() {
+        let model = resolve_model(
+            "zenmux",
+            Some("google/gemini-3-pro-image-preview"),
+            ModelOperation::Generate,
+        )
+        .unwrap();
+
+        assert_eq!(model.google_method, Some(GoogleMethod::GenerateContent));
+    }
+
+    #[test]
+    fn rejects_google_imagen_models_for_editing() {
         let error =
-            resolve_model("zenmux/google", Some("openai/gpt-image-2"), ModelOperation::Generate)
-                .unwrap_err();
+            resolve_model("zenmux", Some("qwen/qwen-image-2.0"), ModelOperation::Edit).unwrap_err();
 
-        assert!(error.to_string().contains("zenmux/openai"));
+        assert!(error.to_string().contains("does not support image editing"));
     }
 
     #[test]
-    fn resolves_non_openai_imagen_models_for_google_provider() {
+    fn resolves_non_openai_imagen_models_for_zenmux_provider() {
         let model =
-            resolve_model("zenmux/google", Some("qwen/qwen-image-2.0"), ModelOperation::Generate)
-                .unwrap();
+            resolve_model("zenmux", Some("qwen/qwen-image-2.0"), ModelOperation::Generate).unwrap();
 
         assert_eq!(model.google_method, Some(GoogleMethod::Predict));
     }

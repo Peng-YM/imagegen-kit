@@ -97,27 +97,27 @@ struct ModelInfoJson {
 
 #[derive(Parser, Debug)]
 #[command(name = "imagegen-kit")]
-#[command(about = "Image generation CLI for ZenMux providers")]
+#[command(about = "Image generation CLI for ZenMux")]
 #[command(version)]
 #[command(after_help = "\
 EXAMPLES:
-    # Generate through ZenMux OpenAI Images protocol
-    imagegen-kit generate \"a clean product photo of a ceramic mug\" --provider zenmux/openai --model gpt-image-2
+    # Generate through ZenMux OpenAI Images endpoint
+    imagegen-kit generate \"a clean product photo of a ceramic mug\" --model gpt-image-2
 
     # Generate and show the saved image inline in iTerm2 or Kitty
     imagegen-kit generate \"a clean product photo of a ceramic mug\" --show
 
-    # Generate through ZenMux Google Gemini / Vertex AI protocol
-    imagegen-kit generate \"a nano banana dish in a fancy restaurant\" --provider zenmux/google --model google/gemini-3-pro-image-preview
+    # Generate through ZenMux Google Gemini endpoint
+    imagegen-kit generate \"a nano banana dish in a fancy restaurant\" --model google/gemini-3-pro-image-preview
 
-    # Generate through ZenMux Google Imagen protocol
-    imagegen-kit generate \"a clean product render\" --provider zenmux/google --model qwen/qwen-image-2.0
+    # Generate through ZenMux Google Imagen endpoint
+    imagegen-kit generate \"a clean product render\" --model qwen/qwen-image-2.0
 
     # Preview a request without calling ZenMux
     imagegen-kit generate \"a clean product photo of a ceramic mug\" --dry-run --json
 
     # Edit an image through ZenMux
-    imagegen-kit edit ./input.png \"replace the background with a studio backdrop\" --provider zenmux/openai
+    imagegen-kit edit ./input.png \"replace the background with a studio backdrop\" --model gpt-image-2
 
     # List providers and model metadata
     imagegen-kit provider --list
@@ -831,6 +831,10 @@ fn google_method_label(method: models::GoogleMethod) -> &'static str {
 
 fn select_provider_interactively() -> Result<ProviderType> {
     let providers = supported_providers();
+    if providers.len() == 1 {
+        return providers.first().cloned().ok_or_else(|| anyhow!("No providers configured"));
+    }
+
     println!("{}", "Select provider:".bold());
     for (index, provider) in providers.iter().enumerate() {
         println!("  {}) {} ({})", index + 1, provider.display_name(), provider.as_str());
@@ -862,7 +866,7 @@ fn parse_provider(provider: Option<&str>) -> Result<ProviderType> {
         .map_err(|_| {
             anyhow!("Unsupported provider. Run 'imagegen-kit provider --list' to list options")
         })?
-        .or(Some(ProviderType::ZenmuxOpenAi))
+        .or(Some(ProviderType::Zenmux))
         .ok_or_else(|| anyhow!("Failed to resolve provider"))
 }
 
@@ -1097,39 +1101,9 @@ mod tests {
     };
 
     #[test]
-    fn rejects_openai_models_on_google_provider() {
+    fn accepts_openai_alias_on_zenmux_provider() {
         let result = resolve_provider_model(
-            &ProviderType::ZenmuxGoogle,
-            Some("openai/gpt-image-2"),
-            ModelOperation::Generate,
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn accepts_google_models_on_google_provider() {
-        let result = resolve_provider_model(
-            &ProviderType::ZenmuxGoogle,
-            Some("google/gemini-3-pro-image-preview"),
-            ModelOperation::Generate,
-        );
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn accepts_imagen_models_on_google_provider() {
-        let result = resolve_provider_model(
-            &ProviderType::ZenmuxGoogle,
-            Some("qwen/qwen-image-2.0"),
-            ModelOperation::Generate,
-        );
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn accepts_openai_alias_on_openai_provider() {
-        let result = resolve_provider_model(
-            &ProviderType::ZenmuxOpenAi,
+            &ProviderType::Zenmux,
             Some("gpt-image-2"),
             ModelOperation::Generate,
         )
@@ -1139,10 +1113,39 @@ mod tests {
     }
 
     #[test]
-    fn rejects_google_provider_for_edits() {
-        let result =
-            resolve_provider_model(&ProviderType::ZenmuxGoogle, None, ModelOperation::Edit);
+    fn accepts_google_models_on_zenmux_provider() {
+        let result = resolve_provider_model(
+            &ProviderType::Zenmux,
+            Some("google/gemini-3-pro-image-preview"),
+            ModelOperation::Generate,
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn accepts_imagen_models_on_zenmux_provider() {
+        let result = resolve_provider_model(
+            &ProviderType::Zenmux,
+            Some("qwen/qwen-image-2.0"),
+            ModelOperation::Generate,
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn rejects_google_imagen_model_for_edits() {
+        let result = resolve_provider_model(
+            &ProviderType::Zenmux,
+            Some("qwen/qwen-image-2.0"),
+            ModelOperation::Edit,
+        );
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn accepts_default_edit_model_on_zenmux_provider() {
+        let result = resolve_provider_model(&ProviderType::Zenmux, None, ModelOperation::Edit);
+        assert!(result.is_ok());
     }
 
     #[test]

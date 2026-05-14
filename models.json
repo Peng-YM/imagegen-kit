@@ -6,13 +6,9 @@
     "https://zenmux.ai/models?sort=newest&supported_protocol=imagen%2Cimages"
   ],
   "defaults": {
-    "zenmux/openai": {
+    "zenmux": {
       "generate": "openai/gpt-image-2",
       "edit": "openai/gpt-image-2"
-    },
-    "zenmux/google": {
-      "generate": "google/gemini-3-pro-image-preview",
-      "edit": null
     }
   },
   "models": [
@@ -20,33 +16,33 @@
       "id": "openai/gpt-image-2",
       "name": "OpenAI: GPT-Image-2",
       "description": "OpenAI's next-generation image generation model with image generation and editing support, flexible dimensions, and high-fidelity image inputs.",
-      "provider": "zenmux/openai",
+      "provider": "zenmux",
       "api_model": "gpt-image-2",
       "aliases": ["gpt-image-2"],
       "protocols": ["openai-images"],
       "source_protocols": ["openai-images", "google-imagen"],
       "supports_generate": true,
       "supports_edit": true,
-      "note": "ZenMux also lists Google Imagen compatibility for this model, but imagegen-kit intentionally routes OpenAI image models only through the OpenAI Images protocol."
+      "note": "ZenMux also lists Google Imagen compatibility for this model, but imagegen-kit intentionally routes OpenAI image models only through the OpenAI Images endpoint."
     },
     {
       "id": "openai/gpt-image-1.5",
       "name": "OpenAI: GPT-Image-1.5",
       "description": "OpenAI image generation and editing model focused on instruction following, photorealism, text rendering, and production creative workflows.",
-      "provider": "zenmux/openai",
+      "provider": "zenmux",
       "api_model": "gpt-image-1.5",
       "aliases": ["gpt-image-1.5"],
       "protocols": ["openai-images"],
       "source_protocols": ["openai-images", "google-imagen"],
       "supports_generate": true,
       "supports_edit": true,
-      "note": "ZenMux also lists Google Imagen compatibility for this model, but imagegen-kit intentionally routes OpenAI image models only through the OpenAI Images protocol."
+      "note": "ZenMux also lists Google Imagen compatibility for this model, but imagegen-kit intentionally routes OpenAI image models only through the OpenAI Images endpoint."
     },
     {
       "id": "google/gemini-3-pro-image-preview",
       "name": "Google: Gemini 3 Pro Image Preview",
       "description": "Gemini image generation model exposed through the ZenMux Google Gemini generateContent protocol.",
-      "provider": "zenmux/google",
+      "provider": "zenmux",
       "api_model": "google/gemini-3-pro-image-preview",
       "aliases": ["gemini-3-pro-image-preview"],
       "protocols": ["google-gemini"],
@@ -59,7 +55,7 @@
       "id": "baidu/ernie-image-turbo",
       "name": "Baidu: ERNIE-Image-Turbo",
       "description": "Baidu text-to-image model designed for fast generation, strong fidelity, complex instruction following, text rendering, and structured image generation.",
-      "provider": "zenmux/google",
+      "provider": "zenmux",
       "api_model": "baidu/ernie-image-turbo",
       "aliases": [],
       "protocols": ["google-imagen"],
@@ -72,7 +68,7 @@
       "id": "qwen/qwen-image-2.0",
       "name": "Qwen: Qwen-Image-2.0",
       "description": "Qwen image generation model available through the ZenMux Google Imagen protocol.",
-      "provider": "zenmux/google",
+      "provider": "zenmux",
       "api_model": "qwen/qwen-image-2.0",
       "aliases": [],
       "protocols": ["google-imagen"],
@@ -85,7 +81,7 @@
       "id": "qwen/qwen-image-2.0-pro",
       "name": "Qwen: Qwen-Image-2.0-Pro",
       "description": "Pro variant of Qwen-Image-2.0 available through the ZenMux Google Imagen protocol.",
-      "provider": "zenmux/google",
+      "provider": "zenmux",
       "api_model": "qwen/qwen-image-2.0-pro",
       "aliases": [],
       "protocols": ["google-imagen"],
@@ -98,7 +94,7 @@
       "id": "bytedance/doubao-seedream-5.0-lite",
       "name": "ByteDance: Doubao-Seedream-5.0-lite",
       "description": "ByteDance Doubao Seedream image generation model available through the ZenMux Google Imagen protocol.",
-      "provider": "zenmux/google",
+      "provider": "zenmux",
       "api_model": "bytedance/doubao-seedream-5.0-lite",
       "aliases": [],
       "protocols": ["google-imagen"],
@@ -111,7 +107,7 @@
       "id": "z-ai/glm-image",
       "name": "Z.AI: GLM-Image",
       "description": "Z.AI GLM image generation model available through the ZenMux Google Imagen protocol.",
-      "provider": "zenmux/google",
+      "provider": "zenmux",
       "api_model": "z-ai/glm-image",
       "aliases": [],
       "protocols": ["google-imagen"],
@@ -124,7 +120,7 @@
       "id": "tencent/hy-image-v3.0",
       "name": "HY-Image-V3.0",
       "description": "Tencent HY-Image generation model available through the ZenMux Google Imagen protocol.",
-      "provider": "zenmux/google",
+      "provider": "zenmux",
       "api_model": "tencent/hy-image-v3.0",
       "aliases": [],
       "protocols": ["google-imagen"],
@@ -137,7 +133,7 @@
       "id": "klingai/kling-v2",
       "name": "KlingAI: Kling-v2",
       "description": "KlingAI image generation model available through the ZenMux Google Imagen protocol.",
-      "provider": "zenmux/google",
+      "provider": "zenmux",
       "api_model": "klingai/kling-v2",
       "aliases": [],
       "protocols": ["google-imagen"],
