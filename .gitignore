@@ -1,0 +1,15 @@
+target/
+Cargo.lock
+
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+*.tmp
+*.bak
+
+.pi/
+imagegen-output/

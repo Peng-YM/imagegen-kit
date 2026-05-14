@@ -1,0 +1,391 @@
+[Skip to content](https://zenmux.ai/docs/guide/advanced/openai-image-generation.html#VPContent)
+
+On this page
+
+Copy Page
+
+# Image Generation - OpenAI Images Protocol [​](https://zenmux.ai/docs/guide/advanced/openai-image-generation.html\#image-generation-openai-images-protocol)
+
+ZenMux supports calling OpenAI image generation models through the OpenAI Images protocol. You can keep using the OpenAI SDK; just point the Base URL to ZenMux and authenticate with your ZenMux API Key.
+
+💡 Supported Models
+
+ZenMux continuously updates the OpenAI image generation models it supports. Visit the [ZenMux model catalog](https://zenmux.ai/models?author=openai&sort=newest&output_modalities=image) to check the currently available models.
+
+## Use Cases [​](https://zenmux.ai/docs/guide/advanced/openai-image-generation.html\#use-cases)
+
+The OpenAI Images protocol is suitable for:
+
+- Generating images from text prompts.
+- Generating new images from one or more reference images.
+- Editing local regions of an image with a mask.
+- Receiving partial images through streaming events for a more real-time generation experience.
+
+If you need to call any image generation model through the Google Gemini protocol, see [Image Generation](https://zenmux.ai/docs/guide/advanced/image-generation.html). OpenAI image models support both the OpenAI Images protocol and the Google Gemini protocol.
+
+## Integration [​](https://zenmux.ai/docs/guide/advanced/openai-image-generation.html\#integration)
+
+The OpenAI Images protocol uses the standard OpenAI SDK initialization flow:
+
+TypeScriptPythoncURL
+
+TypeScript
+
+```
+import OpenAI from "openai";
+
+const client = new OpenAI({
+  baseURL: "https://zenmux.ai/api/v1",
+  apiKey: process.env.ZENMUX_API_KEY,
+});
+```
+
+Python
+
+```
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://zenmux.ai/api/v1",
+    api_key="<ZENMUX_API_KEY>",
+)
+```
+
+bash
+
+```
+curl https://zenmux.ai/api/v1/images/generations \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ZENMUX_API_KEY"
+```
+
+## Generate Images [​](https://zenmux.ai/docs/guide/advanced/openai-image-generation.html\#generate-images)
+
+Use `images.generate` to generate images from a text prompt. GPT Image models return `b64_json` by default, which you can decode and save as an image file.
+
+TypeScriptPythoncURL
+
+TypeScript
+
+```
+import OpenAI from "openai";
+import { writeFile } from "fs/promises";
+
+const client = new OpenAI({
+  baseURL: "https://zenmux.ai/api/v1",
+  apiKey: process.env.ZENMUX_API_KEY,
+});
+
+const img = await client.images.generate({
+  model: "gpt-image-2",
+  prompt: "A cute baby sea otter",
+  n: 1,
+  size: "1024x1024",
+});
+
+const imageBuffer = Buffer.from(img.data[0].b64_json, "base64");
+await writeFile("output.png", imageBuffer);
+```
+
+Python
+
+```
+import base64
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://zenmux.ai/api/v1",
+    api_key="<ZENMUX_API_KEY>",
+)
+
+img = client.images.generate(
+    model="gpt-image-2",
+    prompt="A cute baby sea otter",
+    n=1,
+    size="1024x1024",
+)
+
+image_bytes = base64.b64decode(img.data[0].b64_json)
+with open("output.png", "wb") as f:
+    f.write(image_bytes)
+```
+
+bash
+
+```
+curl https://zenmux.ai/api/v1/images/generations \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ZENMUX_API_KEY" \
+  -d '{
+    "model": "gpt-image-2",
+    "prompt": "A cute baby sea otter",
+    "n": 1,
+    "size": "1024x1024"
+  }' | jq -r '.data[0].b64_json' | base64 --decode > output.png
+```
+
+## Edit Images [​](https://zenmux.ai/docs/guide/advanced/openai-image-generation.html\#edit-images)
+
+Use `images.edit` to generate new images from one or more reference images, or combine it with a mask for local edits.
+
+### Generate a New Image from Reference Images [​](https://zenmux.ai/docs/guide/advanced/openai-image-generation.html\#generate-a-new-image-from-reference-images)
+
+TypeScriptPythoncURL
+
+TypeScript
+
+```
+import fs from "fs";
+import OpenAI, { toFile } from "openai";
+
+const client = new OpenAI({
+  baseURL: "https://zenmux.ai/api/v1",
+  apiKey: process.env.ZENMUX_API_KEY,
+});
+
+const imageFiles = [\
+  "bath-bomb.png",\
+  "body-lotion.png",\
+  "incense-kit.png",\
+  "soap.png",\
+];
+
+const images = await Promise.all(
+  imageFiles.map(async (file) =>
+    await toFile(fs.createReadStream(file), null, {
+      type: "image/png",
+    }),
+  ),
+);
+
+const rsp = await client.images.edit({
+  model: "gpt-image-2",
+  image: images,
+  prompt: "Create a lovely gift basket with these four items in it",
+});
+
+// Save the image to a file
+const image_base64 = rsp.data[0].b64_json;
+const image_bytes = Buffer.from(image_base64, "base64");
+fs.writeFileSync("basket.png", image_bytes);
+```
+
+Python
+
+```
+import base64
+import os
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://zenmux.ai/api/v1",
+    api_key=os.environ["ZENMUX_API_KEY"],
+)
+
+prompt = """
+Generate a photorealistic image of a gift basket on a white background
+labeled 'Relax & Unwind' with a ribbon and handwriting-like font,
+containing all the items in the reference pictures.
+"""
+
+result = client.images.edit(
+    model="gpt-image-2",
+    image=[\
+        open("body-lotion.png", "rb"),\
+        open("bath-bomb.png", "rb"),\
+        open("incense-kit.png", "rb"),\
+        open("soap.png", "rb"),\
+    ],
+    prompt=prompt,
+)
+
+image_base64 = result.data[0].b64_json
+image_bytes = base64.b64decode(image_base64)
+
+# Save the image to a file
+with open("gift-basket.png", "wb") as f:
+    f.write(image_bytes)
+```
+
+bash
+
+```
+curl -s -D >(grep -i x-request-id >&2) \
+  -o >(jq -r '.data[0].b64_json' | base64 --decode > gift-basket.png) \
+  -X POST "https://zenmux.ai/api/v1/images/edits" \
+  -H "Authorization: Bearer $ZENMUX_API_KEY" \
+  -F "model=openai/gpt-image-2" \
+  -F "image[]=@body-lotion.png" \
+  -F "image[]=@bath-bomb.png" \
+  -F "image[]=@incense-kit.png" \
+  -F "image[]=@soap.png" \
+  -F 'prompt=Create a lovely gift basket with these four items in it'
+```
+
+### Local Edits with a Mask [​](https://zenmux.ai/docs/guide/advanced/openai-image-generation.html\#local-edits-with-a-mask)
+
+A mask tells the model which region of the image to edit. The input image and mask should use the same format and dimensions; when using a PNG mask, we recommend including an alpha channel.
+
+TypeScriptPythoncURL
+
+TypeScript
+
+```
+import fs from "fs";
+import OpenAI, { toFile } from "openai";
+
+const client = new OpenAI({
+  baseURL: "https://zenmux.ai/api/v1",
+  apiKey: process.env.ZENMUX_API_KEY,
+});
+
+const rsp = await client.images.edit({
+  model: "gpt-image-2",
+  image: await toFile(fs.createReadStream("sunlit-lounge.png"), null, {
+    type: "image/png",
+  }),
+  mask: await toFile(fs.createReadStream("mask.png"), null, {
+    type: "image/png",
+  }),
+  prompt: "A sunlit indoor lounge area with a pool containing a flamingo",
+});
+
+const imageBase64 = rsp.data[0].b64_json;
+const imageBytes = Buffer.from(imageBase64, "base64");
+fs.writeFileSync("lounge.png", imageBytes);
+```
+
+Python
+
+```
+import base64
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://zenmux.ai/api/v1",
+    api_key="<ZENMUX_API_KEY>",
+)
+
+result = client.images.edit(
+    model="gpt-image-2",
+    image=open("sunlit-lounge.png", "rb"),
+    mask=open("mask.png", "rb"),
+    prompt="A sunlit indoor lounge area with a pool containing a flamingo",
+)
+
+image_base64 = result.data[0].b64_json
+image_bytes = base64.b64decode(image_base64)
+
+with open("lounge.png", "wb") as f:
+    f.write(image_bytes)
+```
+
+bash
+
+```
+curl -s -D >(grep -i x-request-id >&2) \
+  -o >(jq -r '.data[0].b64_json' | base64 --decode > lounge.png) \
+  -X POST "https://zenmux.ai/api/v1/images/edits" \
+  -H "Authorization: Bearer $ZENMUX_API_KEY" \
+  -F "model=openai/gpt-image-2" \
+  -F "mask=@mask.png" \
+  -F "image[]=@sunlit-lounge.png" \
+  -F 'prompt=A sunlit indoor lounge area with a pool containing a flamingo'
+```
+
+## Streaming Generation [​](https://zenmux.ai/docs/guide/advanced/openai-image-generation.html\#streaming-generation)
+
+The OpenAI Images protocol supports returning SSE events with `stream: true`. You can use `partial_images` to control how many intermediate images are returned:
+
+- `partial_images: 0`: return only the final image.
+- `partial_images: 1` to `3`: return partial generated images; the final image may complete early.
+
+TypeScriptPythoncURL
+
+TypeScript
+
+```
+import fs from "fs";
+import OpenAI from "openai";
+
+const client = new OpenAI({
+  baseURL: "https://zenmux.ai/api/v1",
+  apiKey: process.env.ZENMUX_API_KEY,
+});
+
+const stream = await client.images.generate({
+  model: "gpt-image-2",
+  prompt: "Draw a river made of white owl feathers through a winter landscape",
+  stream: true,
+  partial_images: 2,
+});
+
+for await (const event of stream) {
+  if (event.type === "image_generation.partial_image") {
+    const imageBuffer = Buffer.from(event.b64_json, "base64");
+    fs.writeFileSync(`river-${event.partial_image_index}.png`, imageBuffer);
+  }
+}
+```
+
+Python
+
+```
+import base64
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://zenmux.ai/api/v1",
+    api_key="<ZENMUX_API_KEY>",
+)
+
+stream = client.images.generate(
+    model="gpt-image-2",
+    prompt="Draw a river made of white owl feathers through a winter landscape",
+    stream=True,
+    partial_images=2,
+)
+
+for event in stream:
+    if event.type == "image_generation.partial_image":
+        image_bytes = base64.b64decode(event.b64_json)
+        with open(f"river-{event.partial_image_index}.png", "wb") as f:
+            f.write(image_bytes)
+```
+
+bash
+
+```
+curl https://zenmux.ai/api/v1/images/generations \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ZENMUX_API_KEY" \
+  -d '{
+    "model": "gpt-image-2",
+    "prompt": "Draw a river made of white owl feathers through a winter landscape",
+    "stream": true,
+    "partial_images": 2
+  }' \
+  --no-buffer
+```
+
+For streaming event formats, see:
+
+- [Image generation streaming events](https://zenmux.ai/docs/api/openai/image-generation-streaming-events.html)
+- [Image edit streaming events](https://zenmux.ai/docs/api/openai/image-edit-streaming-events.html)
+
+## Output Parameters [​](https://zenmux.ai/docs/guide/advanced/openai-image-generation.html\#output-parameters)
+
+Common output parameters include:
+
+| Parameter | Description |
+| --- | --- |
+| `size` | Image size, such as `1024x1024`, `1536x1024`, `1024x1536`, or other sizes supported by the model |
+| `quality` | Output quality, such as `low`, `medium`, `high`, `auto` |
+| `output_format` | Output format, such as `png`, `jpeg`, `webp` |
+| `output_compression` | JPEG / WebP compression quality, from 0 to 100 |
+| `background` | Background setting, such as `transparent`, `opaque`, `auto`; exact support depends on the model |
+
+For the complete API fields, see:
+
+- [Create image](https://zenmux.ai/docs/api/openai/generate-an-image.html)
+- [Create image edit](https://zenmux.ai/docs/api/openai/create-image-edit.html)
