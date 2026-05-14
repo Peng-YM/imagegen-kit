@@ -1,5 +1,26 @@
 # imagegen-kit
 
+<p align="center">
+  <a href="https://github.com/Peng-YM/imagegen-kit/stargazers">
+    <img src="https://img.shields.io/github/stars/Peng-YM/imagegen-kit?style=flat-square" alt="Stars">
+  </a>
+  <a href="https://github.com/Peng-YM/imagegen-kit/network/members">
+    <img src="https://img.shields.io/github/forks/Peng-YM/imagegen-kit?style=flat-square" alt="Forks">
+  </a>
+  <a href="https://github.com/Peng-YM/imagegen-kit/issues">
+    <img src="https://img.shields.io/github/issues/Peng-YM/imagegen-kit?style=flat-square" alt="Issues">
+  </a>
+  <a href="https://github.com/Peng-YM/imagegen-kit/blob/master/LICENSE">
+    <img src="https://img.shields.io/github/license/Peng-YM/imagegen-kit?style=flat-square" alt="License">
+  </a>
+  <a href="https://github.com/Peng-YM/imagegen-kit/releases">
+    <img src="https://img.shields.io/github/v/release/Peng-YM/imagegen-kit?style=flat-square" alt="Release">
+  </a>
+  <a href="https://github.com/Peng-YM/imagegen-kit/releases">
+    <img src="https://img.shields.io/github/downloads/Peng-YM/imagegen-kit/total?style=flat-square" alt="Downloads">
+  </a>
+</p>
+
 `imagegen-kit` is a Rust CLI for image generation workflows, with provider boundaries, encrypted credential storage, JSON output, and dry-run support.
 
 The provider integration targets ZenMux:
