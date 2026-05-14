@@ -69,6 +69,7 @@ imagegen-kit generate "a clean product photo of a ceramic mug" --dry-run --json
 ### `generate`
 
 Preview or execute a text-to-image request.
+When `--output-dir` is omitted, images are saved to a new random directory under the system temp directory.
 
 ```bash
 imagegen-kit generate "prompt text" \
@@ -85,6 +86,7 @@ imagegen-kit generate "prompt text" \
 ### `edit`
 
 Preview or execute an image editing request.
+When `--output-dir` is omitted, images are saved to a new random directory under the system temp directory.
 
 ```bash
 imagegen-kit edit ./input.png "edit prompt" \

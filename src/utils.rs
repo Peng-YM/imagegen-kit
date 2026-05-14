@@ -1,4 +1,6 @@
 use crate::error::{anyhow, Result};
+use rand::rngs::OsRng;
+use rand::RngCore;
 use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -33,7 +35,16 @@ pub fn parse_size(size: &str) -> Result<(u32, u32)> {
 }
 
 pub fn default_output_dir() -> Result<PathBuf> {
-    Ok(std::env::current_dir()?.join("imagegen-output"))
+    let temp_dir = std::env::temp_dir();
+    for _ in 0..16 {
+        let suffix = OsRng.next_u64();
+        let path = temp_dir.join(format!("imagegen-kit-{suffix:016x}"));
+        if !path.exists() {
+            return Ok(path);
+        }
+    }
+
+    Err(anyhow!("Failed to allocate a unique temporary output directory"))
 }
 
 pub fn write_json_pretty<T: Serialize>(value: &T) -> Result<()> {
@@ -43,7 +54,7 @@ pub fn write_json_pretty<T: Serialize>(value: &T) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_url, parse_size};
+    use super::{default_output_dir, is_url, parse_size};
 
     #[test]
     fn detects_http_urls() {
@@ -58,5 +69,20 @@ mod tests {
         assert_eq!(parse_size("auto").unwrap(), (0, 0));
         assert!(parse_size("1024").is_err());
         assert!(parse_size("0x1024").is_err());
+    }
+
+    #[test]
+    fn default_output_dir_uses_random_temp_path() {
+        let temp_dir = std::env::temp_dir();
+        let first = default_output_dir().unwrap();
+        let second = default_output_dir().unwrap();
+
+        assert_eq!(first.parent(), Some(temp_dir.as_path()));
+        assert!(first
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default()
+            .starts_with("imagegen-kit-"));
+        assert_ne!(first, second);
     }
 }
