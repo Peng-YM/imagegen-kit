@@ -6,7 +6,7 @@ REPO="Peng-YM/imagegen-kit"
 REPO_BRANCH="master"
 BINARY_NAME="imagegen-kit"
 INSTALL_DIR="${HOME}/.local/bin"
-DEFAULT_VERSION="v0.3.0"
+DEFAULT_VERSION="v0.3.1"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'

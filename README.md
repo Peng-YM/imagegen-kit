@@ -48,7 +48,7 @@ curl -fsSL https://raw.githubusercontent.com/Peng-YM/imagegen-kit/master/install
 To install a specific release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Peng-YM/imagegen-kit/master/install.sh | bash -s -- v0.3.0
+curl -fsSL https://raw.githubusercontent.com/Peng-YM/imagegen-kit/master/install.sh | bash -s -- v0.3.1
 ```
 
 ## Usage
