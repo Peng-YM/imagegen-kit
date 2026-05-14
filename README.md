@@ -36,7 +36,10 @@ curl -fsSL https://raw.githubusercontent.com/Peng-YM/imagegen-kit/master/install
 
 ```bash
 # Store a ZenMux API key
-imagegen-kit login --provider zenmux/openai
+imagegen-kit provider --login
+
+# Show logged-in providers, their models, and generate/edit defaults
+imagegen-kit status
 
 # Generate via OpenAI Images protocol
 imagegen-kit generate "a clean product photo of a ceramic mug" \
@@ -88,15 +91,26 @@ imagegen-kit edit ./input.png "edit prompt" \
   --output-dir ./output
 ```
 
-### `login`
+### `provider`
 
-Manage encrypted provider credentials.
+List provider model metadata and manage encrypted provider credentials.
 
 ```bash
-imagegen-kit login --provider zenmux/openai
-imagegen-kit login --provider zenmux/google --api-key "$ZENMUX_API_KEY"
-imagegen-kit login --list
-imagegen-kit login --delete zenmux
+imagegen-kit provider --list
+imagegen-kit provider --list --provider zenmux/google
+imagegen-kit provider --login
+imagegen-kit provider --login --provider zenmux/openai
+imagegen-kit provider --provider zenmux/google --api-key "$ZENMUX_API_KEY"
+imagegen-kit provider --delete zenmux/openai
+```
+
+### `status`
+
+List currently logged-in providers, their available models, and default models for generate/edit modes.
+
+```bash
+imagegen-kit status
+imagegen-kit status --json
 ```
 
 ## Provider Notes
@@ -108,7 +122,8 @@ Uses the OpenAI Images protocol documented by ZenMux.
 - Base URL: `https://zenmux.ai/api/v1`
 - Generate endpoint: `/images/generations`
 - Edit endpoint: `/images/edits`
-- Default model: `gpt-image-2`
+- Default generate model: `gpt-image-2`
+- Default edit model: `gpt-image-2`
 - Auth: `Authorization: Bearer $ZENMUX_API_KEY`
 
 ### `zenmux/google`
@@ -120,6 +135,7 @@ Uses the Google Gemini / Imagen / Vertex AI protocol documented by ZenMux.
 - Supports non-OpenAI Imagen catalog models through `:predict`
 - Does not route OpenAI image models through the Google protocol; use `zenmux/openai` for `gpt-image-*`
 - Default generate model: `google/gemini-3-pro-image-preview`
+- Default edit model: none
 - Image editing is not exposed through `zenmux/google` in this CLI
 - Auth: `x-goog-api-key: $ZENMUX_API_KEY`
 

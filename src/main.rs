@@ -9,6 +9,7 @@ use imagegen_kit::utils::{default_output_dir, ensure_dir_exists, parse_size, wri
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::Serialize;
 use serde_json::json;
+use std::io::{self, Write};
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -60,6 +61,36 @@ struct CommandResultJson {
     artifacts: Vec<String>,
 }
 
+#[derive(Serialize)]
+struct ProviderInfoJson {
+    id: String,
+    name: String,
+    protocol: String,
+    env_var: String,
+    default_generate_model: Option<String>,
+    default_edit_model: Option<String>,
+    credential_stored: bool,
+    models: Vec<ModelInfoJson>,
+    status: String,
+}
+
+#[derive(Serialize)]
+struct ModelInfoJson {
+    id: String,
+    name: String,
+    description: Option<String>,
+    api_model: String,
+    aliases: Vec<String>,
+    protocols: Vec<String>,
+    source_protocols: Vec<String>,
+    google_method: Option<models::GoogleMethod>,
+    supports_generate: bool,
+    supports_edit: bool,
+    default_generate: bool,
+    default_edit: bool,
+    note: Option<String>,
+}
+
 #[derive(Parser, Debug)]
 #[command(name = "imagegen-kit")]
 #[command(about = "Image generation CLI for ZenMux providers")]
@@ -81,11 +112,14 @@ EXAMPLES:
     # Edit an image through ZenMux
     imagegen-kit edit ./input.png \"replace the background with a studio backdrop\" --provider zenmux/openai
 
-    # Store a provider API key securely
-    imagegen-kit login --provider zenmux/openai
+    # List providers and model metadata
+    imagegen-kit provider --list
 
-    # List configured credentials
-    imagegen-kit login --list
+    # Store a provider API key securely
+    imagegen-kit provider --login
+
+    # Show logged-in providers and their default models
+    imagegen-kit status
 ")]
 struct Cli {
     #[command(subcommand)]
@@ -97,8 +131,8 @@ impl Cli {
         match &self.command {
             Commands::Generate { json, .. }
             | Commands::Edit { json, .. }
-            | Commands::Login { json, .. }
-            | Commands::Providers { json } => *json,
+            | Commands::Status { json, .. }
+            | Commands::Provider { json, .. } => *json,
         }
     }
 }
@@ -205,7 +239,16 @@ enum Commands {
         overwrite: bool,
     },
 
-    Login {
+    Status {
+        #[arg(long)]
+        json: bool,
+
+        #[arg(short, long)]
+        quiet: bool,
+    },
+
+    #[command(alias = "providers")]
+    Provider {
         #[arg(long, value_name = "PROVIDER")]
         provider: Option<String>,
 
@@ -215,6 +258,9 @@ enum Commands {
         #[arg(long)]
         list: bool,
 
+        #[arg(long)]
+        login: bool,
+
         #[arg(long, value_name = "PROVIDER")]
         delete: Option<String>,
 
@@ -223,11 +269,6 @@ enum Commands {
 
         #[arg(short, long)]
         quiet: bool,
-    },
-
-    Providers {
-        #[arg(long)]
-        json: bool,
     },
 }
 
@@ -337,10 +378,10 @@ async fn run(cli: Cli) -> Result<()> {
             )
             .await
         }
-        Commands::Login { provider, api_key, list, delete, json, quiet } => {
-            run_login(provider, api_key, list, delete, json, quiet)
+        Commands::Status { json, quiet } => run_status(json, quiet),
+        Commands::Provider { provider, api_key, list, login, delete, json, quiet } => {
+            run_provider(provider, api_key, list, login, delete, json, quiet)
         }
-        Commands::Providers { json } => run_providers(json),
     }
 }
 
@@ -525,47 +566,70 @@ async fn run_edit(
     print_command_result(result.provider, result.model, result.artifacts, json, quiet)
 }
 
-fn run_login(
+fn run_provider(
     provider: Option<String>,
     api_key: Option<String>,
     list: bool,
+    login: bool,
     delete: Option<String>,
     json: bool,
     quiet: bool,
 ) -> Result<()> {
-    if list {
-        let providers = auth::list_credentials()?;
-        if json {
-            return write_json_pretty(&json!({ "providers": providers }));
-        }
-        if providers.is_empty() {
-            if !quiet {
-                println!("No credentials stored");
-            }
-        } else {
-            for provider in providers {
-                println!("{}", provider);
-            }
-        }
-        return Ok(());
+    let should_login = login || api_key.is_some();
+    let action_count =
+        usize::from(list) + usize::from(should_login) + usize::from(delete.is_some());
+    if action_count > 1 {
+        return Err(anyhow!("Choose only one provider action: --list, --login, or --delete"));
     }
 
     if let Some(provider) = delete {
-        let key = parse_provider(Some(&provider))
-            .map(|provider_type| auth::provider_key(provider_type.as_str()).to_string())
-            .unwrap_or_else(|_| auth::provider_key(&provider).to_string());
-        auth::delete_credential(&key)?;
-        if json {
-            return write_json_pretty(&json!({ "success": true, "deleted": key }));
-        }
+        return delete_provider_credential(&provider, json, quiet);
+    }
+
+    if should_login {
+        return login_provider(provider, api_key, json, quiet);
+    }
+
+    list_provider_catalog(provider.as_deref(), json, quiet)
+}
+
+fn run_status(json: bool, quiet: bool) -> Result<()> {
+    let providers = supported_providers()
+        .into_iter()
+        .filter_map(|provider| match provider_logged_in(&provider) {
+            Ok(true) => Some(provider_info(&provider)),
+            Ok(false) => None,
+            Err(error) => Some(Err(error)),
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    if json {
+        return write_json_pretty(&json!({ "providers": providers }));
+    }
+
+    if providers.is_empty() {
         if !quiet {
-            println!("{} {}", "Deleted credential for".green(), key);
+            println!("No providers logged in");
         }
         return Ok(());
     }
 
-    let provider = provider.ok_or_else(|| anyhow!("Specify --provider, --list, or --delete"))?;
-    let provider_type = parse_provider(Some(&provider))?;
+    for provider in &providers {
+        print_provider_info(provider, quiet);
+    }
+    Ok(())
+}
+
+fn login_provider(
+    provider: Option<String>,
+    api_key: Option<String>,
+    json: bool,
+    quiet: bool,
+) -> Result<()> {
+    let provider_type = match provider {
+        Some(provider) => parse_provider(Some(&provider))?,
+        None => select_provider_interactively()?,
+    };
     let key = auth::provider_key(provider_type.as_str());
     let api_key = match api_key {
         Some(value) => value,
@@ -586,49 +650,186 @@ fn run_login(
     }
 }
 
-fn run_providers(json: bool) -> Result<()> {
-    let providers = supported_providers()
-        .into_iter()
-        .map(|provider| {
-            let models = models::models_for_provider(provider.as_str())
-                .into_iter()
-                .map(|model| model.id.clone())
-                .collect::<Vec<_>>();
-            let default_model =
-                models::default_model(provider.as_str()).ok().map(|model| model.id.clone());
-            json!({
-                "id": provider.as_str(),
-                "name": provider.display_name(),
-                "protocol": provider.protocol(),
-                "env_var": provider.env_var(),
-                "default_model": default_model,
-                "models": models,
-                "status": "implemented",
-            })
-        })
-        .collect::<Vec<_>>();
+fn delete_provider_credential(provider: &str, json: bool, quiet: bool) -> Result<()> {
+    let key = parse_provider(Some(provider))
+        .map(|provider_type| auth::provider_key(provider_type.as_str()).to_string())
+        .unwrap_or_else(|_| auth::provider_key(provider).to_string());
+    auth::delete_credential(&key)?;
+    if json {
+        return write_json_pretty(&json!({ "success": true, "deleted": key }));
+    }
+    if !quiet {
+        println!("{} {}", "Deleted credential for".green(), key);
+    }
+    Ok(())
+}
+
+fn list_provider_catalog(provider: Option<&str>, json: bool, quiet: bool) -> Result<()> {
+    let provider_types = match provider {
+        Some(provider) => vec![parse_provider(Some(provider))?],
+        None => supported_providers(),
+    };
+
+    let providers = provider_types.iter().map(provider_info).collect::<Result<Vec<_>>>()?;
 
     if json {
         write_json_pretty(&json!({ "providers": providers }))
     } else {
-        for provider in providers {
-            println!(
-                "{}\t{}\t{}\t{}",
-                provider["id"].as_str().unwrap_or_default(),
-                provider["name"].as_str().unwrap_or_default(),
-                provider["protocol"].as_str().unwrap_or_default(),
-                provider["status"].as_str().unwrap_or_default()
-            );
+        for provider in &providers {
+            print_provider_info(provider, quiet);
         }
         Ok(())
     }
+}
+
+fn provider_info(provider: &ProviderType) -> Result<ProviderInfoJson> {
+    let default_generate_model =
+        models::default_model(provider.as_str(), ModelOperation::Generate)?
+            .map(|model| model.id.clone());
+    let default_edit_model = models::default_model(provider.as_str(), ModelOperation::Edit)?
+        .map(|model| model.id.clone());
+    let credential_stored = provider_logged_in(provider)?;
+    let models = models::models_for_provider(provider.as_str())
+        .into_iter()
+        .map(|model| ModelInfoJson {
+            id: model.id.clone(),
+            name: model.name.clone(),
+            description: model.description.clone(),
+            api_model: model.api_model.clone(),
+            aliases: model.aliases.clone(),
+            protocols: model.protocols.clone(),
+            source_protocols: model.source_protocols.clone(),
+            google_method: model.google_method,
+            supports_generate: model.supports_generate,
+            supports_edit: model.supports_edit,
+            default_generate: default_generate_model.as_deref() == Some(model.id.as_str()),
+            default_edit: default_edit_model.as_deref() == Some(model.id.as_str()),
+            note: model.note.clone(),
+        })
+        .collect::<Vec<_>>();
+
+    Ok(ProviderInfoJson {
+        id: provider.as_str().to_string(),
+        name: provider.display_name().to_string(),
+        protocol: provider.protocol().to_string(),
+        env_var: provider.env_var().to_string(),
+        default_generate_model,
+        default_edit_model,
+        credential_stored,
+        models,
+        status: "implemented".to_string(),
+    })
+}
+
+fn provider_logged_in(provider: &ProviderType) -> Result<bool> {
+    auth::get_credential(auth::provider_key(provider.as_str()))
+        .map(|credential| credential.is_some())
+}
+
+fn print_provider_info(provider: &ProviderInfoJson, quiet: bool) {
+    if quiet {
+        println!("{}", provider.id);
+        for model in &provider.models {
+            println!("{}", model.id);
+        }
+        return;
+    }
+
+    println!("{} {}", provider.id.bold(), provider.name);
+    println!("{} {}", "Protocol:".bold(), provider.protocol);
+    println!(
+        "{} {} ({})",
+        "Auth:".bold(),
+        provider.env_var,
+        if provider.credential_stored { "stored" } else { "not stored" }
+    );
+    println!(
+        "{} {}",
+        "Default generate:".bold(),
+        provider.default_generate_model.as_deref().unwrap_or("none")
+    );
+    println!(
+        "{} {}",
+        "Default edit:".bold(),
+        provider.default_edit_model.as_deref().unwrap_or("none")
+    );
+    println!("{}", "Models:".bold());
+    for model in &provider.models {
+        let default_marker = model_default_marker(model);
+        println!("  - {}{}", model.id.bold(), default_marker);
+        println!("    Name: {}", model.name);
+        if let Some(description) = &model.description {
+            println!("    Description: {}", description);
+        }
+        println!("    Protocols: {}", model.protocols.join(", "));
+        println!("    Capabilities: {}", model_capabilities(model).join(", "));
+        if let Some(method) = model.google_method {
+            println!("    Google method: {}", google_method_label(method));
+        }
+    }
+    println!();
+}
+
+fn model_default_marker(model: &ModelInfoJson) -> &'static str {
+    match (model.default_generate, model.default_edit) {
+        (true, true) => " (default generate/edit)",
+        (true, false) => " (default generate)",
+        (false, true) => " (default edit)",
+        (false, false) => "",
+    }
+}
+
+fn model_capabilities(model: &ModelInfoJson) -> Vec<&'static str> {
+    let mut capabilities = Vec::new();
+    if model.supports_generate {
+        capabilities.push("generate");
+    }
+    if model.supports_edit {
+        capabilities.push("edit");
+    }
+    capabilities
+}
+
+fn google_method_label(method: models::GoogleMethod) -> &'static str {
+    match method {
+        models::GoogleMethod::GenerateContent => "generateContent",
+        models::GoogleMethod::Predict => "predict",
+    }
+}
+
+fn select_provider_interactively() -> Result<ProviderType> {
+    let providers = supported_providers();
+    println!("{}", "Select provider:".bold());
+    for (index, provider) in providers.iter().enumerate() {
+        println!("  {}) {} ({})", index + 1, provider.display_name(), provider.as_str());
+    }
+    print!("Provider [1]: ");
+    io::stdout().flush()?;
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    let input = input.trim();
+    if input.is_empty() {
+        return providers.first().cloned().ok_or_else(|| anyhow!("No providers configured"));
+    }
+
+    if let Ok(index) = input.parse::<usize>() {
+        return providers
+            .get(index.saturating_sub(1))
+            .cloned()
+            .ok_or_else(|| anyhow!("Provider selection out of range"));
+    }
+
+    parse_provider(Some(input))
 }
 
 fn parse_provider(provider: Option<&str>) -> Result<ProviderType> {
     provider
         .map(ProviderType::from_str)
         .transpose()
-        .map_err(|_| anyhow!("Unsupported provider. Run 'imagegen-kit providers' to list options"))?
+        .map_err(|_| {
+            anyhow!("Unsupported provider. Run 'imagegen-kit provider --list' to list options")
+        })?
         .or(Some(ProviderType::ZenmuxOpenAi))
         .ok_or_else(|| anyhow!("Failed to resolve provider"))
 }

@@ -12,14 +12,22 @@ pub struct ModelCatalog {
     pub version: u32,
     pub updated_at: String,
     pub source_urls: Vec<String>,
-    pub defaults: HashMap<String, String>,
+    pub defaults: HashMap<String, ProviderDefaults>,
     pub models: Vec<ModelEntry>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ProviderDefaults {
+    pub generate: String,
+    pub edit: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ModelEntry {
     pub id: String,
     pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
     pub provider: String,
     pub api_model: String,
     #[serde(default)]
@@ -68,23 +76,48 @@ pub fn supported_model_ids(provider_id: &str) -> Vec<String> {
     ids
 }
 
-pub fn default_model(provider_id: &str) -> Result<&'static ModelEntry> {
-    let default_id = catalog()
-        .defaults
-        .get(provider_id)
-        .ok_or_else(|| anyhow!("No default model configured for {}", provider_id))?;
+pub fn default_model(
+    provider_id: &str,
+    operation: ModelOperation,
+) -> Result<Option<&'static ModelEntry>> {
+    let Some(default_id) = default_model_id(provider_id, operation)? else {
+        return Ok(None);
+    };
 
-    catalog()
+    let model = catalog()
         .models
         .iter()
-        .find(|model| model.provider == provider_id && model_matches(model, default_id))
+        .find(|model| model.provider == provider_id && model_matches(model, &default_id))
         .ok_or_else(|| {
             anyhow!(
                 "Default model '{}' for {} is missing from embedded models.json",
                 default_id,
                 provider_id
             )
-        })
+        })?;
+
+    if !supports_operation(model, operation) {
+        return Err(anyhow!(
+            "Default model '{}' does not support image {} through {}.",
+            model.id,
+            operation_name(operation),
+            provider_id
+        ));
+    }
+
+    Ok(Some(model))
+}
+
+pub fn default_model_id(provider_id: &str, operation: ModelOperation) -> Result<Option<String>> {
+    let defaults = catalog()
+        .defaults
+        .get(provider_id)
+        .ok_or_else(|| anyhow!("No default model configured for {}", provider_id))?;
+
+    Ok(match operation {
+        ModelOperation::Generate => Some(defaults.generate.clone()),
+        ModelOperation::Edit => defaults.edit.clone(),
+    })
 }
 
 pub fn resolve_model(
@@ -101,7 +134,13 @@ pub fn resolve_model(
                 supported_model_ids(provider_id).join(", ")
             )
         })?,
-        None => default_model(provider_id)?,
+        None => default_model(provider_id, operation)?.ok_or_else(|| {
+            anyhow!(
+                "No default model configured for image {} through {}.",
+                operation_name(operation),
+                provider_id
+            )
+        })?,
     };
 
     if model.provider != provider_id {
@@ -151,7 +190,7 @@ fn operation_name(operation: ModelOperation) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{catalog, resolve_model, GoogleMethod, ModelOperation};
+    use super::{catalog, default_model, resolve_model, GoogleMethod, ModelOperation};
 
     #[test]
     fn loads_embedded_catalog() {
@@ -167,6 +206,17 @@ mod tests {
             resolve_model("zenmux/openai", Some("gpt-image-2"), ModelOperation::Generate).unwrap();
         assert_eq!(model.id, "openai/gpt-image-2");
         assert_eq!(model.api_model, "gpt-image-2");
+    }
+
+    #[test]
+    fn resolves_defaults_by_operation() {
+        let generate = default_model("zenmux/openai", ModelOperation::Generate).unwrap().unwrap();
+        let edit = default_model("zenmux/openai", ModelOperation::Edit).unwrap().unwrap();
+        let google_edit = default_model("zenmux/google", ModelOperation::Edit).unwrap();
+
+        assert_eq!(generate.id, "openai/gpt-image-2");
+        assert_eq!(edit.id, "openai/gpt-image-2");
+        assert!(google_edit.is_none());
     }
 
     #[test]

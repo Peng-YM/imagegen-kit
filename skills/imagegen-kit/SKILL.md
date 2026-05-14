@@ -14,7 +14,7 @@ description: >-
 ## Readiness Check
 
 ```bash
-imagegen-kit --version && imagegen-kit providers && imagegen-kit --help
+imagegen-kit --version && imagegen-kit provider --list && imagegen-kit --help
 ```
 
 ## Providers
@@ -34,11 +34,14 @@ imagegen-kit generate "prompt text" --provider zenmux/google --model google/gemi
 imagegen-kit generate "prompt text" --provider zenmux/google --model qwen/qwen-image-2.0
 imagegen-kit edit ./input.png "edit prompt" --provider zenmux/openai --model gpt-image-2
 imagegen-kit generate "prompt text" --dry-run --json
+imagegen-kit provider --list --provider zenmux/google
+imagegen-kit status
 ```
 
 ## Credentials
 
 ```bash
-imagegen-kit login --provider zenmux/openai
-imagegen-kit login --list
+imagegen-kit provider --login
+imagegen-kit provider --login --provider zenmux/openai
+imagegen-kit status --json
 ```

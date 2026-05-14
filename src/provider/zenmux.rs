@@ -26,9 +26,10 @@ impl ZenmuxOpenAiProvider {
     }
 
     fn api_key(&self) -> Result<&str> {
-        self.api_key.as_deref().filter(|key| !key.is_empty()).ok_or_else(|| {
-            anyhow!("ZENMUX_API_KEY is required. Run imagegen-kit login --provider zenmux/openai")
-        })
+        self.api_key
+            .as_deref()
+            .filter(|key| !key.is_empty())
+            .ok_or_else(|| anyhow!("ZENMUX_API_KEY is required. Run imagegen-kit provider --login"))
     }
 }
 
@@ -157,9 +158,10 @@ impl ZenmuxGoogleProvider {
     }
 
     fn api_key(&self) -> Result<&str> {
-        self.api_key.as_deref().filter(|key| !key.is_empty()).ok_or_else(|| {
-            anyhow!("ZENMUX_API_KEY is required. Run imagegen-kit login --provider zenmux/google")
-        })
+        self.api_key
+            .as_deref()
+            .filter(|key| !key.is_empty())
+            .ok_or_else(|| anyhow!("ZENMUX_API_KEY is required. Run imagegen-kit provider --login"))
     }
 }
 
