@@ -14,6 +14,8 @@ use std::time::Duration;
 
 const ZENMUX_OPENAI_BASE_URL: &str = "https://zenmux.ai/api/v1";
 const ZENMUX_VERTEX_BASE_URL: &str = "https://zenmux.ai/api/vertex-ai/v1";
+const RESPONSE_PREVIEW_LIMIT: usize = 4000;
+const RESPONSE_STRING_LIMIT: usize = 240;
 
 pub struct ZenmuxProvider {
     api_key: Option<String>,
@@ -419,10 +421,12 @@ struct B64Image {
 }
 
 fn extract_vertex_prediction_images(value: &Value) -> Result<Vec<B64Image>> {
-    let predictions = value
-        .get("predictions")
-        .and_then(Value::as_array)
-        .ok_or_else(|| anyhow!("ZenMux Vertex response did not include predictions"))?;
+    let predictions = value.get("predictions").and_then(Value::as_array).ok_or_else(|| {
+        anyhow!(
+            "ZenMux Vertex response did not include predictions.\nResponse preview:\n{}",
+            response_preview(value)
+        )
+    })?;
 
     let mut images = Vec::new();
     for prediction in predictions {
@@ -458,17 +462,22 @@ fn extract_vertex_prediction_images(value: &Value) -> Result<Vec<B64Image>> {
     }
 
     if images.is_empty() {
-        return Err(anyhow!("ZenMux Vertex response contained no image bytes"));
+        return Err(anyhow!(
+            "ZenMux Vertex response contained no image bytes.\nResponse preview:\n{}",
+            response_preview(value)
+        ));
     }
 
     Ok(images)
 }
 
 fn extract_generate_content_images(value: &Value) -> Result<Vec<B64Image>> {
-    let candidates = value
-        .get("candidates")
-        .and_then(Value::as_array)
-        .ok_or_else(|| anyhow!("ZenMux generateContent response did not include candidates"))?;
+    let candidates = value.get("candidates").and_then(Value::as_array).ok_or_else(|| {
+        anyhow!(
+            "ZenMux generateContent response did not include candidates.\nResponse preview:\n{}",
+            response_preview(value)
+        )
+    })?;
 
     let mut images = Vec::new();
     let mut text_parts = Vec::new();
@@ -502,7 +511,10 @@ fn extract_generate_content_images(value: &Value) -> Result<Vec<B64Image>> {
     }
 
     if images.is_empty() {
-        return Err(anyhow!("ZenMux generateContent response contained no inline image data"));
+        return Err(anyhow!(
+            "ZenMux generateContent response contained no inline image data.\nResponse preview:\n{}",
+            response_preview(value)
+        ));
     }
 
     let revised_prompt = if text_parts.is_empty() { None } else { Some(text_parts.join("\n")) };
@@ -511,6 +523,56 @@ fn extract_generate_content_images(value: &Value) -> Result<Vec<B64Image>> {
     }
 
     Ok(images)
+}
+
+fn response_preview(value: &Value) -> String {
+    let redacted = redact_response_value(None, value);
+    let preview = serde_json::to_string_pretty(&redacted).unwrap_or_else(|_| redacted.to_string());
+    truncate_chars(&preview, RESPONSE_PREVIEW_LIMIT)
+}
+
+fn redact_response_value(key: Option<&str>, value: &Value) -> Value {
+    match value {
+        Value::Array(items) => {
+            Value::Array(items.iter().map(|item| redact_response_value(None, item)).collect())
+        }
+        Value::Object(map) => Value::Object(
+            map.iter()
+                .map(|(key, value)| (key.clone(), redact_response_value(Some(key), value)))
+                .collect(),
+        ),
+        Value::String(text) if should_redact_string(key, text) => {
+            Value::String(format!("[{} chars redacted]", text.chars().count()))
+        }
+        _ => value.clone(),
+    }
+}
+
+fn should_redact_string(key: Option<&str>, text: &str) -> bool {
+    if text.chars().count() > RESPONSE_STRING_LIMIT {
+        return true;
+    }
+
+    let Some(key) = key else {
+        return false;
+    };
+    let key = key.to_ascii_lowercase();
+    let image_like_key = key.contains("base64")
+        || key.contains("b64")
+        || key.contains("bytes")
+        || key == "data"
+        || key == "image";
+
+    image_like_key && text.len() > 32
+}
+
+fn truncate_chars(text: &str, limit: usize) -> String {
+    if text.chars().count() <= limit {
+        return text.to_string();
+    }
+
+    let truncated = text.chars().take(limit).collect::<String>();
+    format!("{truncated}\n... [response preview truncated]")
 }
 
 fn save_base64_images(
@@ -604,5 +666,50 @@ fn detect_image_mime(bytes: &[u8]) -> Option<&'static str> {
         Some("image/webp")
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{extract_vertex_prediction_images, response_preview};
+    use serde_json::json;
+
+    #[test]
+    fn includes_vertex_response_preview_when_images_are_missing() {
+        let value = json!({
+            "predictions": [
+                {
+                    "error": "model returned no image",
+                    "safetyAttributes": {
+                        "blocked": true
+                    }
+                }
+            ]
+        });
+
+        let error = extract_vertex_prediction_images(&value).unwrap_err().to_string();
+
+        assert!(error.contains("ZenMux Vertex response contained no image bytes"));
+        assert!(error.contains("Response preview"));
+        assert!(error.contains("model returned no image"));
+        assert!(error.contains("blocked"));
+    }
+
+    #[test]
+    fn redacts_large_response_strings_in_preview() {
+        let value = json!({
+            "predictions": [
+                {
+                    "unexpectedImagePayload": "a".repeat(512)
+                }
+            ],
+            "message": "short text"
+        });
+
+        let preview = response_preview(&value);
+
+        assert!(preview.contains("[512 chars redacted]"));
+        assert!(preview.contains("short text"));
+        assert!(!preview.contains(&"a".repeat(512)));
     }
 }
