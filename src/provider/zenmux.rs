@@ -628,7 +628,8 @@ async fn save_base64_images(
                 index + 1
             ));
         };
-        let mime_type = requested_format.map(format_to_mime).unwrap_or_else(|| image.mime_type.clone());
+        let mime_type =
+            requested_format.map(format_to_mime).unwrap_or_else(|| image.mime_type.clone());
         let path = output_path(output_dir, stem, index + 1, mime_extension(&mime_type), overwrite)?;
         fs::write(&path, image_bytes)?;
         artifacts.push(ImageArtifact {
