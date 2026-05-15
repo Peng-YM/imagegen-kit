@@ -159,12 +159,14 @@ impl ZenmuxProvider {
         progress_cb(ProgressUpdate::new("Saving generated images".to_string()));
         let images = extract_generate_content_images(&value)?;
         let artifacts = save_base64_images(
+            &self.client,
             &images,
             &request.output_dir,
             "image",
             request.output_format.as_deref(),
             request.overwrite,
-        )?;
+        )
+        .await?;
 
         Ok(ImageResult { provider: "zenmux".to_string(), model: Some(model_entry.id), artifacts })
     }
@@ -189,12 +191,14 @@ impl ZenmuxProvider {
         progress_cb(ProgressUpdate::new("Saving generated images".to_string()));
         let images = extract_vertex_prediction_images(&value)?;
         let artifacts = save_base64_images(
+            &self.client,
             &images,
             &request.output_dir,
             "image",
             request.output_format.as_deref(),
             request.overwrite,
-        )?;
+        )
+        .await?;
 
         Ok(ImageResult { provider: "zenmux".to_string(), model: Some(model_entry.id), artifacts })
     }
@@ -415,7 +419,8 @@ async fn save_openai_data(
 
 #[derive(Debug)]
 struct B64Image {
-    b64: String,
+    b64: Option<String>,
+    url: Option<String>,
     mime_type: String,
     revised_prompt: Option<String>,
 }
@@ -432,7 +437,8 @@ fn extract_vertex_prediction_images(value: &Value) -> Result<Vec<B64Image>> {
     for prediction in predictions {
         if let Some(b64) = prediction.get("bytesBase64Encoded").and_then(Value::as_str) {
             images.push(B64Image {
-                b64: b64.to_string(),
+                b64: Some(b64.to_string()),
+                url: None,
                 mime_type: prediction
                     .get("mimeType")
                     .and_then(Value::as_str)
@@ -446,7 +452,8 @@ fn extract_vertex_prediction_images(value: &Value) -> Result<Vec<B64Image>> {
         } else if let Some(image) = prediction.get("image") {
             if let Some(b64) = image.get("bytesBase64Encoded").and_then(Value::as_str) {
                 images.push(B64Image {
-                    b64: b64.to_string(),
+                    b64: Some(b64.to_string()),
+                    url: None,
                     mime_type: image
                         .get("mimeType")
                         .and_then(Value::as_str)
@@ -458,6 +465,20 @@ fn extract_vertex_prediction_images(value: &Value) -> Result<Vec<B64Image>> {
                         .map(str::to_string),
                 });
             }
+        } else if let Some(gcs_uri) = prediction.get("gcsUri").and_then(Value::as_str) {
+            images.push(B64Image {
+                b64: None,
+                url: Some(gcs_uri.to_string()),
+                mime_type: prediction
+                    .get("mimeType")
+                    .and_then(Value::as_str)
+                    .unwrap_or("image/png")
+                    .to_string(),
+                revised_prompt: prediction
+                    .get("prompt")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+            });
         }
     }
 
@@ -496,7 +517,8 @@ fn extract_generate_content_images(value: &Value) -> Result<Vec<B64Image>> {
             if let Some(inline_data) = inline_data {
                 if let Some(data) = inline_data.get("data").and_then(Value::as_str) {
                     images.push(B64Image {
-                        b64: data.to_string(),
+                        b64: Some(data.to_string()),
+                        url: None,
                         mime_type: inline_data
                             .get("mimeType")
                             .or_else(|| inline_data.get("mime_type"))
@@ -575,7 +597,8 @@ fn truncate_chars(text: &str, limit: usize) -> String {
     format!("{truncated}\n... [response preview truncated]")
 }
 
-fn save_base64_images(
+async fn save_base64_images(
+    client: &reqwest::Client,
     images: &[B64Image],
     output_dir: &Path,
     stem: &str,
@@ -586,9 +609,21 @@ fn save_base64_images(
     let mut artifacts = Vec::new();
 
     for (index, image) in images.iter().enumerate() {
-        let image_bytes = BASE64.decode(&image.b64)?;
-        let mime_type =
-            requested_format.map(format_to_mime).unwrap_or_else(|| image.mime_type.clone());
+        let image_bytes: Vec<u8> = if let Some(b64) = &image.b64 {
+            BASE64.decode(b64)?
+        } else if let Some(url) = &image.url {
+            client.get(url).send().await?.error_for_status()?.bytes().await?.to_vec()
+        } else {
+            return Err(anyhow!(
+                "ZenMux Vertex prediction {} had neither base64 data nor a URL",
+                index + 1
+            ));
+        };
+        let mime_type = requested_format.map(format_to_mime).unwrap_or_else(|| {
+            detect_image_mime(&image_bytes)
+                .map(str::to_string)
+                .unwrap_or_else(|| image.mime_type.clone())
+        });
         let path = output_path(output_dir, stem, index + 1, mime_extension(&mime_type), overwrite)?;
         fs::write(&path, image_bytes)?;
         artifacts.push(ImageArtifact {
@@ -693,6 +728,22 @@ mod tests {
         assert!(error.contains("Response preview"));
         assert!(error.contains("model returned no image"));
         assert!(error.contains("blocked"));
+    }
+
+    #[test]
+    fn extracts_gcs_uri_from_vertex_prediction() {
+        let value = json!({
+            "predictions": [
+                {
+                    "gcsUri": "https://example.com/image.png"
+                }
+            ]
+        });
+
+        let images = extract_vertex_prediction_images(&value).unwrap();
+        assert_eq!(images.len(), 1);
+        assert!(images[0].b64.is_none());
+        assert_eq!(images[0].url.as_deref(), Some("https://example.com/image.png"));
     }
 
     #[test]
