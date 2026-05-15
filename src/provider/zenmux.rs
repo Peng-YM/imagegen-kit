@@ -612,18 +612,23 @@ async fn save_base64_images(
         let image_bytes: Vec<u8> = if let Some(b64) = &image.b64 {
             BASE64.decode(b64)?
         } else if let Some(url) = &image.url {
-            client.get(url).send().await?.error_for_status()?.bytes().await?.to_vec()
+            client
+                .get(url)
+                .send()
+                .await
+                .and_then(|r| r.error_for_status())
+                .map_err(|e| anyhow!("Failed to download image from GCS URI: {}", e))?
+                .bytes()
+                .await
+                .map_err(|e| anyhow!("Failed to read image bytes from GCS URI: {}", e))?
+                .to_vec()
         } else {
             return Err(anyhow!(
                 "ZenMux Vertex prediction {} had neither base64 data nor a URL",
                 index + 1
             ));
         };
-        let mime_type = requested_format.map(format_to_mime).unwrap_or_else(|| {
-            detect_image_mime(&image_bytes)
-                .map(str::to_string)
-                .unwrap_or_else(|| image.mime_type.clone())
-        });
+        let mime_type = requested_format.map(format_to_mime).unwrap_or_else(|| image.mime_type.clone());
         let path = output_path(output_dir, stem, index + 1, mime_extension(&mime_type), overwrite)?;
         fs::write(&path, image_bytes)?;
         artifacts.push(ImageArtifact {
